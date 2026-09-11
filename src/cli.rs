@@ -690,11 +690,23 @@ fn parse_pr_view_args(args: &[String]) -> Result<ParseOutcome<PrViewRequest>, Co
         let number = number.parse::<u64>().map_err(|_| {
             CommandError::usage("invalid pull request number: expected a positive integer")
         })?;
+        let comments = flag_count(&matches, "comments") > 0;
+        let page = match last_value(&matches, "page") {
+            Some(value) => parse_positive_integer_flag("--page", &value)?,
+            None => 1,
+        };
+        let per_page = match last_value(&matches, "per_page") {
+            Some(value) => parse_positive_integer_flag("--per-page", &value)?,
+            None => 20,
+        };
 
         Ok(PrViewRequest {
             output,
             repo,
             number,
+            comments,
+            page,
+            per_page,
         })
     })
 }
@@ -1542,9 +1554,26 @@ fn issue_edit_command() -> Command {
 
 fn pr_view_command() -> Command {
     base_command("view", "gitee pr view")
-        .about("View a single pull request")
+        .about("View a single pull request and optionally include comments")
         .arg(json_flag())
         .arg(repo_option())
+        .arg(count_flag(
+            "comments",
+            "comments",
+            "Include pull request comments in the response",
+        ))
+        .arg(string_option(
+            "page",
+            "page",
+            "PAGE",
+            "1-based page number for comment pagination",
+        ))
+        .arg(string_option(
+            "per_page",
+            "per-page",
+            "PER_PAGE",
+            "Number of comments to return per page",
+        ))
         .arg(positionals_arg("positionals", "PR", "Pull request number"))
 }
 
@@ -2277,7 +2306,7 @@ fn pr_view_help_json() -> serde_json::Value {
     help_command_json(
         "view",
         "pr view",
-        "View a single pull request",
+        "View a single pull request and optionally include comments",
         "gh pr view",
         true,
         "optional",
@@ -2287,16 +2316,36 @@ fn pr_view_help_json() -> serde_json::Value {
         vec![
             help_option_json("--json", None, "Output machine-readable JSON", false),
             repo_option_json(),
+            help_option_json(
+                "--comments",
+                None,
+                "Include pull request comments in the response",
+                false,
+            ),
+            help_option_json(
+                "--page",
+                Some("PAGE"),
+                "1-based page number for comment pagination",
+                false,
+            ),
+            help_option_json(
+                "--per-page",
+                Some("PER_PAGE"),
+                "Number of comments to return per page",
+                false,
+            ),
         ],
         vec![help_argument_json("pr", "PR", "Pull request number", true)],
         Vec::new(),
         vec![
             "gitee pr view 42 --repo octo/demo --json",
             "gitee pr view 42 --json",
+            "gitee pr view 42 --comments --page 1 --per-page 20 --json",
             "gitee pr view 42 --repo octo/demo --json number,title,url",
         ],
         vec![
             "When --repo is omitted, the command can infer the repository from local git context.",
+            "Comments are fetched only when --comments is provided.",
         ],
     )
 }

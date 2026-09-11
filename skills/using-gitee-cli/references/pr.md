@@ -37,25 +37,31 @@ gitee pr list --state open --limit 10 --json
 ## `gitee pr view`
 
 - `gh` equivalent: `gh pr view`
-- Summary: view a single pull request.
+- Summary: view a single pull request, optionally including comments.
 - Auth: `optional`
 - Local git required: no
 - Repo inference: yes
 - Syntax:
 
 ```bash
-gitee pr view <PR> [--repo <OWNER/REPO>] [--json]
+gitee pr view <PR> [--repo <OWNER/REPO>] [--comments] [--page <N>] [--per-page <N>] [--json]
 ```
 
 - Arguments:
   - `<PR>`: pull request number
 - Flags:
   - `--repo <OWNER/REPO>`: target repository
+  - `--comments`: include pull request comments in the response
+  - `--page <N>`: 1-based page number for comment pagination
+  - `--per-page <N>`: number of comments to return per page
+- Notes:
+  - Comments are fetched only when `--comments` is provided.
 - Examples:
 
 ```bash
 gitee pr view 42 --repo octo/demo --json
 gitee pr view 42 --json
+gitee pr view 42 --comments --page 1 --per-page 20 --json
 ```
 
 ## `gitee pr create`
