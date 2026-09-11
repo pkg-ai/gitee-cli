@@ -217,6 +217,310 @@ fn pr_view_supports_extended_gh_style_json_fields() {
 }
 
 #[test]
+fn pr_view_includes_paginated_comments_when_requested() {
+    let server = MockServer::start();
+
+    let pr_mock = server.mock(|when, then| {
+        when.method(GET).path("/v5/repos/octo/demo/pulls/42");
+        then.status(200).json_body(serde_json::json!({
+            "number": 42,
+            "state": "open",
+            "title": "Fix pull request rendering",
+            "body": "Adds stable PR rendering",
+            "html_url": "https://gitee.com/octo/demo/pulls/42",
+            "draft": false,
+            "mergeable": true,
+            "created_at": "2026-03-20T09:00:00+08:00",
+            "updated_at": "2026-03-20T10:00:00+08:00",
+            "merged_at": null,
+            "user": {
+                "login": "octocat"
+            },
+            "head": {
+                "ref": "feature/pr-view",
+                "sha": "abc123",
+                "repo": {
+                    "full_name": "octo/demo"
+                }
+            },
+            "base": {
+                "ref": "main",
+                "sha": "def456",
+                "repo": {
+                    "full_name": "octo/demo"
+                }
+            }
+        }));
+    });
+
+    let comments_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/v5/repos/octo/demo/pulls/42/comments")
+            .query_param("page", "2")
+            .query_param("per_page", "1");
+        then.status(200).json_body(serde_json::json!([
+            {
+                "id": 99,
+                "body": "Please add a regression test",
+                "html_url": "https://gitee.com/octo/demo/pulls/42#note_99",
+                "created_at": "2026-03-20T12:30:00+08:00",
+                "updated_at": "2026-03-20T12:31:00+08:00",
+                "user": {
+                    "login": "carol"
+                }
+            }
+        ]));
+    });
+
+    let output = Command::cargo_bin("gitee")
+        .unwrap()
+        .env("GITEE_BASE_URL", server.base_url())
+        .args([
+            "pr",
+            "view",
+            "42",
+            "--repo",
+            "octo/demo",
+            "--comments",
+            "--page",
+            "2",
+            "--per-page",
+            "1",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+
+    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(body["comments_included"], true);
+    assert_eq!(body["comments_page"], 2);
+    assert_eq!(body["comments_per_page"], 1);
+    assert_eq!(body["comments"][0]["id"], 99);
+    assert_eq!(body["comments"][0]["author"], "carol");
+    assert_eq!(body["comments"][0]["body"], "Please add a regression test");
+    assert_eq!(
+        body["comments"][0]["created_at"],
+        "2026-03-20T12:30:00+08:00"
+    );
+    assert_eq!(
+        body["comments"][0]["updated_at"],
+        "2026-03-20T12:31:00+08:00"
+    );
+
+    pr_mock.assert_hits(1);
+    comments_mock.assert_hits(1);
+}
+
+#[test]
+fn pr_view_renders_body_and_comments_in_text_output() {
+    let server = MockServer::start();
+
+    let pr_mock = server.mock(|when, then| {
+        when.method(GET).path("/v5/repos/octo/demo/pulls/42");
+        then.status(200).json_body(serde_json::json!({
+            "number": 42,
+            "state": "open",
+            "title": "Fix pull request rendering",
+            "body": "Adds stable PR rendering",
+            "html_url": "https://gitee.com/octo/demo/pulls/42",
+            "draft": false,
+            "mergeable": true,
+            "created_at": "2026-03-20T09:00:00+08:00",
+            "updated_at": "2026-03-20T10:00:00+08:00",
+            "merged_at": null,
+            "user": {
+                "login": "octocat"
+            },
+            "head": {
+                "ref": "feature/pr-view",
+                "sha": "abc123",
+                "repo": {
+                    "full_name": "octo/demo"
+                }
+            },
+            "base": {
+                "ref": "main",
+                "sha": "def456",
+                "repo": {
+                    "full_name": "octo/demo"
+                }
+            }
+        }));
+    });
+
+    let comments_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/v5/repos/octo/demo/pulls/42/comments");
+        then.status(200).json_body(serde_json::json!([
+            {
+                "id": 99,
+                "body": "Please add a regression test",
+                "html_url": "https://gitee.com/octo/demo/pulls/42#note_99",
+                "created_at": "2026-03-20T12:30:00+08:00",
+                "updated_at": "2026-03-20T12:31:00+08:00",
+                "user": {
+                    "login": "carol"
+                }
+            }
+        ]));
+    });
+
+    let output = Command::cargo_bin("gitee")
+        .unwrap()
+        .env("GITEE_BASE_URL", server.base_url())
+        .args(["pr", "view", "42", "--repo", "octo/demo", "--comments"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        "\
+#42 Fix pull request rendering
+state: open
+author: octocat
+repository: octo/demo
+head: octo/demo:feature/pr-view
+base: octo/demo:main
+draft: false
+mergeable: true
+url: https://gitee.com/octo/demo/pulls/42
+comments included: true
+comments page: 1
+comments per page: 20
+body:
+Adds stable PR rendering
+comment 99 | carol | 2026-03-20T12:30:00+08:00
+Please add a regression test"
+    );
+
+    pr_mock.assert_hits(1);
+    comments_mock.assert_hits(1);
+}
+
+#[test]
+fn pr_view_omits_body_without_comments_even_when_body_present() {
+    let server = MockServer::start();
+
+    let pr_mock = server.mock(|when, then| {
+        when.method(GET).path("/v5/repos/octo/demo/pulls/42");
+        then.status(200).json_body(serde_json::json!({
+            "number": 42,
+            "state": "open",
+            "title": "Fix pull request rendering",
+            "body": "A deliberate long body",
+            "html_url": "https://gitee.com/octo/demo/pulls/42",
+            "draft": false,
+            "mergeable": true,
+            "created_at": "2026-03-20T09:00:00+08:00",
+            "updated_at": "2026-03-20T10:00:00+08:00",
+            "merged_at": null,
+            "user": {
+                "login": "octocat"
+            },
+            "head": {
+                "ref": "feature/pr-view",
+                "sha": "abc123",
+                "repo": {
+                    "full_name": "octo/demo"
+                }
+            },
+            "base": {
+                "ref": "main",
+                "sha": "def456",
+                "repo": {
+                    "full_name": "octo/demo"
+                }
+            }
+        }));
+    });
+
+    let output = Command::cargo_bin("gitee")
+        .unwrap()
+        .env("GITEE_BASE_URL", server.base_url())
+        .args(["pr", "view", "42", "--repo", "octo/demo"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("comments included: false"));
+    assert!(!stdout.contains("body:"));
+    assert!(!stdout.contains("A deliberate long body"));
+
+    pr_mock.assert_hits(1);
+}
+
+#[test]
+fn pr_view_skips_comment_history_by_default() {
+    let server = MockServer::start();
+
+    let pr_mock = server.mock(|when, then| {
+        when.method(GET).path("/v5/repos/octo/demo/pulls/42");
+        then.status(200).json_body(serde_json::json!({
+            "number": 42,
+            "state": "open",
+            "title": "Fix pull request rendering",
+            "body": "Adds stable PR rendering",
+            "html_url": "https://gitee.com/octo/demo/pulls/42",
+            "draft": false,
+            "mergeable": true,
+            "created_at": "2026-03-20T09:00:00+08:00",
+            "updated_at": "2026-03-20T10:00:00+08:00",
+            "merged_at": null,
+            "user": {
+                "login": "octocat"
+            },
+            "head": {
+                "ref": "feature/pr-view",
+                "sha": "abc123",
+                "repo": {
+                    "full_name": "octo/demo"
+                }
+            },
+            "base": {
+                "ref": "main",
+                "sha": "def456",
+                "repo": {
+                    "full_name": "octo/demo"
+                }
+            }
+        }));
+    });
+
+    let comments_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/v5/repos/octo/demo/pulls/42/comments");
+        then.status(200).json_body(serde_json::json!([]));
+    });
+
+    let output = Command::cargo_bin("gitee")
+        .unwrap()
+        .env("GITEE_BASE_URL", server.base_url())
+        .args(["pr", "view", "42", "--repo", "octo/demo", "--json"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+
+    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(body["comments_included"], false);
+    assert_eq!(body["comments_page"], Value::Null);
+    assert_eq!(body["comments_per_page"], Value::Null);
+    assert_eq!(body["comments"], Value::Null);
+
+    pr_mock.assert_hits(1);
+    comments_mock.assert_hits(0);
+}
+
+#[test]
 fn pr_view_rejects_unknown_json_fields_with_a_specific_usage_error() {
     let output = Command::cargo_bin("gitee")
         .unwrap()
@@ -385,7 +689,8 @@ head: octo/demo:feature/pr-view
 base: octo/demo:main
 draft: false
 mergeable: true
-url: https://gitee.com/octo/demo/pulls/42"
+url: https://gitee.com/octo/demo/pulls/42
+comments included: false"
     );
 
     pr_mock.assert_hits(1);

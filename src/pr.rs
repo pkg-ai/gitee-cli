@@ -38,7 +38,36 @@ impl PrService {
         let pull_request =
             self.fetch_pull_request_with_fallback(&repo, request.number, token.as_deref())?;
 
-        Ok(render_pr_view(request.output, pull_request))
+        let comments = if request.comments {
+            Some(
+                self.client
+                    .list_pull_request_comments(
+                        &repo.owner,
+                        &repo.name,
+                        request.number,
+                        token.as_deref(),
+                        request.page,
+                        request.per_page,
+                    )
+                    .map_err(map_pull_request_error)?
+                    .into_iter()
+                    .map(Into::into)
+                    .collect(),
+            )
+        } else {
+            None
+        };
+
+        Ok(render_pr_view(
+            request.output,
+            pull_request,
+            Some(PrCommentSection {
+                comments_included: request.comments,
+                comments_page: request.comments.then_some(request.page),
+                comments_per_page: request.comments.then_some(request.per_page),
+                comments,
+            }),
+        ))
     }
 
     pub fn comment(&self, request: PrCommentRequest) -> Result<CommandOutcome, CommandError> {
@@ -213,7 +242,7 @@ impl PrService {
         let pull_request =
             self.update_pull_request_with_fallback(&repo, request.number, &token, &update)?;
 
-        Ok(render_pr_view(request.output, pull_request))
+        Ok(render_pr_view(request.output, pull_request, None))
     }
 
     pub fn merge(&self, request: PrMergeRequest) -> Result<CommandOutcome, CommandError> {
@@ -597,6 +626,13 @@ struct PullRequestComment {
     comment_type: String,
 }
 
+struct PrCommentSection {
+    comments_included: bool,
+    comments_page: Option<u32>,
+    comments_per_page: Option<u32>,
+    comments: Option<Vec<PullRequestComment>>,
+}
+
 struct PullRequestMergeResult {
     sha: Option<String>,
     merged: bool,
@@ -696,6 +732,9 @@ pub struct PrViewRequest {
     pub output: OutputFormat,
     pub repo: Option<String>,
     pub number: u64,
+    pub comments: bool,
+    pub page: u32,
+    pub per_page: u32,
 }
 
 pub struct PrCommentRequest {
@@ -859,33 +898,71 @@ fn resolve_repo(repo: Option<&str>) -> Result<ResolvedRepo, CommandError> {
     }
 }
 
-fn render_pr_view(output: OutputFormat, pull_request: PullRequest) -> CommandOutcome {
+fn render_pr_view(
+    output: OutputFormat,
+    pull_request: PullRequest,
+    comments: Option<PrCommentSection>,
+) -> CommandOutcome {
     match output {
         OutputFormat::Json { fields } => CommandOutcome::json(
             EXIT_OK,
             match fields {
                 Some(fields) => pr_selected_json(&pull_request, &fields),
-                None => pr_detail_json(&pull_request),
+                None => pr_detail_json(&pull_request, comments.as_ref()),
             },
         ),
-        OutputFormat::Text => CommandOutcome::text(
-            EXIT_OK,
-            format!(
-                "#{} {}\nstate: {}\nauthor: {}\nrepository: {}\nhead: {}:{}\nbase: {}:{}\ndraft: {}\nmergeable: {}\nurl: {}",
-                pull_request.number,
-                pull_request.title,
-                pull_request.state,
-                pull_request.author,
-                pull_request.repository,
-                pull_request.head.repository,
-                pull_request.head.r#ref,
-                pull_request.base.repository,
-                pull_request.base.r#ref,
-                pull_request.draft,
-                render_optional_bool(pull_request.mergeable),
-                pull_request.html_url,
-            ),
-        ),
+        OutputFormat::Text => {
+            let mut lines = vec![
+                format!("#{} {}", pull_request.number, pull_request.title),
+                format!("state: {}", pull_request.state),
+                format!("author: {}", pull_request.author),
+                format!("repository: {}", pull_request.repository),
+                format!(
+                    "head: {}:{}",
+                    pull_request.head.repository, pull_request.head.r#ref
+                ),
+                format!(
+                    "base: {}:{}",
+                    pull_request.base.repository, pull_request.base.r#ref
+                ),
+                format!("draft: {}", pull_request.draft),
+                format!(
+                    "mergeable: {}",
+                    render_optional_bool(pull_request.mergeable)
+                ),
+                format!("url: {}", pull_request.html_url),
+            ];
+
+            if let Some(section) = comments {
+                lines.push(format!("comments included: {}", section.comments_included));
+                if let (Some(page), Some(per_page)) =
+                    (section.comments_page, section.comments_per_page)
+                {
+                    lines.push(format!("comments page: {}", page));
+                    lines.push(format!("comments per page: {}", per_page));
+                }
+                if section.comments_included
+                    && let Some(body) = pull_request.body.as_deref().filter(|body| !body.is_empty())
+                {
+                    lines.push("body:".to_string());
+                    lines.push(body.to_string());
+                }
+                if let Some(comment_list) = section.comments {
+                    if comment_list.is_empty() {
+                        lines.push("comment history: (no comments)".to_string());
+                    } else {
+                        lines.extend(comment_list.into_iter().map(|comment| {
+                            format!(
+                                "comment {} | {} | {}\n{}",
+                                comment.id, comment.author, comment.created_at, comment.body
+                            )
+                        }));
+                    }
+                }
+            }
+
+            CommandOutcome::text(EXIT_OK, lines.join("\n"))
+        }
     }
 }
 
@@ -969,7 +1046,7 @@ fn render_pr_review(
 
 fn render_pr_create(output: OutputFormat, pull_request: PullRequest) -> CommandOutcome {
     if matches!(&output, OutputFormat::Json { .. }) {
-        return render_pr_view(output, pull_request);
+        return render_pr_view(output, pull_request, None);
     }
 
     CommandOutcome::text(
@@ -1167,8 +1244,11 @@ fn pr_summary_json(pull_request: &PullRequest) -> serde_json::Value {
     })
 }
 
-fn pr_detail_json(pull_request: &PullRequest) -> serde_json::Value {
-    json!({
+fn pr_detail_json(
+    pull_request: &PullRequest,
+    comments: Option<&PrCommentSection>,
+) -> serde_json::Value {
+    let mut value = json!({
         "number": pull_request.number,
         "state": pull_request.state,
         "title": pull_request.title,
@@ -1187,7 +1267,33 @@ fn pr_detail_json(pull_request: &PullRequest) -> serde_json::Value {
         "created_at": pull_request.created_at,
         "updated_at": pull_request.updated_at,
         "merged_at": pull_request.merged_at,
-    })
+    });
+
+    if let Some(section) = comments {
+        let comments_json = section.comments.as_ref().map(|comments| {
+            comments
+                .iter()
+                .map(|comment| {
+                    json!({
+                        "id": comment.id,
+                        "author": comment.author,
+                        "body": comment.body,
+                        "created_at": comment.created_at,
+                        "updated_at": comment.updated_at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
+
+        if let Some(obj) = value.as_object_mut() {
+            obj.insert("comments_included".into(), json!(section.comments_included));
+            obj.insert("comments_page".into(), json!(section.comments_page));
+            obj.insert("comments_per_page".into(), json!(section.comments_per_page));
+            obj.insert("comments".into(), json!(comments_json));
+        }
+    }
+
+    value
 }
 
 fn pr_selected_json(pull_request: &PullRequest, fields: &[String]) -> serde_json::Value {

@@ -267,6 +267,43 @@ impl GiteeClient {
         ))
     }
 
+    pub fn list_pull_request_comments(
+        &self,
+        owner: &str,
+        repo: &str,
+        number: u64,
+        token: Option<&str>,
+        page: u32,
+        per_page: u32,
+    ) -> Result<Vec<PullRequestCommentResponse>, PullRequestError> {
+        let query = vec![
+            ("page", page.to_string()),
+            ("per_page", per_page.to_string()),
+        ];
+
+        let response = self
+            .with_optional_auth(
+                self.client.get(format!(
+                    "{}/v5/repos/{owner}/{repo}/pulls/{number}/comments",
+                    self.base_url
+                )),
+                token,
+            )
+            .query(&query)
+            .send()
+            .map_err(PullRequestError::Transport)?;
+
+        if response.status().is_success() {
+            return response
+                .json::<Vec<PullRequestCommentResponse>>()
+                .map_err(PullRequestError::Transport);
+        }
+
+        Err(PullRequestError::from_response_with_not_found_first(
+            response,
+        ))
+    }
+
     pub fn approve_pull_request(
         &self,
         owner: &str,

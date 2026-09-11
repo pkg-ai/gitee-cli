@@ -196,6 +196,41 @@ fn create_pull_request_comment_sends_json_body() {
 }
 
 #[test]
+fn list_pull_request_comments_sends_page_filters_and_parses_results() {
+    let server = MockServer::start();
+    let comments_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/v5/repos/octo/demo/pulls/42/comments")
+            .header("authorization", "Bearer secret-token")
+            .matches(excludes_access_token)
+            .query_param("page", "2")
+            .query_param("per_page", "1");
+        then.status(200).json_body(serde_json::json!([
+            {
+                "id": 7,
+                "body": "Looks good",
+                "html_url": "https://gitee.com/octo/demo/pulls/42#note_7",
+                "created_at": "2026-03-20T09:00:00+08:00",
+                "updated_at": "2026-03-20T10:00:00+08:00",
+                "user": {
+                    "login": "reviewer"
+                }
+            }
+        ]));
+    });
+
+    let comments = client_for(&server)
+        .list_pull_request_comments("octo", "demo", 42, Some("secret-token"), 2, 1)
+        .expect("listed pull request comments should parse");
+
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].id, 7);
+    assert_eq!(comments[0].body, "Looks good");
+    assert_eq!(comments[0].user.login, "reviewer");
+    comments_mock.assert_hits(1);
+}
+
+#[test]
 fn approve_pull_request_maps_invalid_token_response() {
     let server = MockServer::start();
     let review_mock = server.mock(|when, then| {
