@@ -5,9 +5,7 @@ from scripts, local terminals, and AI-driven workflows.
 
 It gives you a small, stable command surface for authentication, repository
 inspection, issue triage, and pull request workflows without dropping down to
-raw Gitee API calls.
-
-The installed executable is named `gitee`.
+raw Gitee API calls. The installed executable is named `gitee`.
 
 For agent and LLM discovery, start with:
 
@@ -15,15 +13,13 @@ For agent and LLM discovery, start with:
 gitee help --json
 ```
 
-This returns a machine-readable manifest of supported command groups,
-subcommands, flags, examples, and `gh`-style equivalents. To inspect one
-command only, use a topic path such as `gitee help pr create --json`.
+This returns a machine-readable manifest of command groups, subcommands, flags,
+examples, and `gh`-style equivalents. For one command, use a topic path such as
+`gitee help pr create --json`.
 
-> `gitee-cli` is an unofficial community project. It is not affiliated with,
-> endorsed by, or sponsored by Gitee or `gitee.com`.
->
-> Gitee and `gitee.com` are trademarks or registered trademarks of their
-> respective owner. They are referenced here only to identify platform
+> `gitee-cli` is an unofficial community project, not affiliated with, endorsed
+> by, or sponsored by Gitee or `gitee.com`. Gitee and `gitee.com` are trademarks
+> of their respective owners, referenced here only to identify platform
 > compatibility.
 
 ## Why This Exists
@@ -62,183 +58,81 @@ npm install -g @pkg-ai/gitee-cli
 gitee --version
 ```
 
-Run the CLI without a global install:
+Or run without a global install:
 
 ```bash
 npx @pkg-ai/gitee-cli --version
 ```
 
-The npm package includes prebuilt binaries for:
-
-- Apple Silicon macOS: `aarch64-apple-darwin`
-- Linux x86_64: `x86_64-unknown-linux-musl`
+The npm package includes prebuilt binaries for Apple Silicon macOS
+(`aarch64-apple-darwin`) and Linux x86_64 (`x86_64-unknown-linux-musl`).
 
 ## Install the Bundled Skill in Coding Agents
 
-Install the bundled `using-gitee-cli` skill. By default it is installed into
+Install the bundled `using-gitee-cli` skill. By default it goes to
 `~/.agents/skills`, the cross-client Agent Skills standard directory:
 
 ```bash
 gitee skills install
 ```
 
-To install it into Claude Code's personal skill directory instead, pass
-`--agent claude-code`:
+For Claude Code's personal skill directory, pass `--agent claude-code`:
 
 ```bash
 gitee skills install --agent claude-code
 ```
 
-Use `gitee skills list` to check the installation status of every target, and
-`gitee skills uninstall` (optionally with `--agent claude-code`) to remove a
-specific target. Only `claude-code` is a supported `--agent` value; omit the
-flag for the default cross-client target.
+`--agent` supports only `claude-code`; omit it for the default cross-client
+target. Use `gitee skills list` to check status, `gitee skills uninstall` to
+remove a target.
 
 ## Common Workflows
 
-### Check Authentication Before Doing Work
+### Fix an issue and ship a pull request, end to end
 
-Use `auth status` when a script or agent needs to fail fast before it touches a
-repository or API:
+This is one full cycle in the terminal: read an issue, fix it, open a PR,
+field and address review comments, get it approved, and merge.
 
-```bash
-gitee auth status --json
-```
-
-To save a token from stdin instead of a flag:
-
-```bash
-printf '%s\n' "$TOKEN" | gitee auth login --with-token --json
-```
-
-### Inspect a Repository Quickly
-
-When you know the repository slug:
-
-```bash
-gitee repo view --repo octo/demo --json
-```
-
-When you are already inside a local checkout:
-
-```bash
-gitee repo view --json
-```
-
-Clone using your saved protocol preference, or choose SSH/HTTPS on first use:
-
-```bash
-gitee repo clone octo/demo
-```
-
-Clone over HTTPS to an explicit destination:
-
-```bash
-gitee repo clone octo/demo demo-https --https --json
-```
-
-### Read Issue Context Before Making a Change
-
-List open issues for the current repository:
-
-```bash
-gitee issue list --state open --page 1 --per-page 20 --json
-```
-
-View one issue in an explicit repository:
-
-```bash
-gitee issue view I123 --repo octo/demo --json
-```
-
-Include comment history when you need prior discussion:
+Start by reading the issue you'll work on, including its discussion:
 
 ```bash
 gitee issue view I123 --repo octo/demo --comments --page 1 --per-page 20 --json
 ```
 
-Edit an issue title, body, or state:
+Write the fix in your editor, then open a PR from the current branch:
 
 ```bash
-gitee issue edit I123 --repo octo/demo --title "Updated title" --state closed --json
+gitee pr create --title "Fix I123" --base develop --body "Closes I123" --json
 ```
 
-Post a follow-up comment non-interactively:
-
-```bash
-gitee issue comment I123 --repo octo/demo --body "Thanks for the report" --json
-```
-
-### Work with Pull Requests Without Leaving the Terminal
-
-View a pull request:
+Bring up the PR for code review — review it yourself, or reply to a
+reviewer's comment in place:
 
 ```bash
 gitee pr view 42 --repo octo/demo --json
+gitee pr comment 42 --repo octo/demo --body "Fixed, please re-review" --json
 ```
 
-List pull requests with filters:
+Pull the PR's comments to see what needs fixing, apply the changes, and push:
 
 ```bash
-gitee pr list --repo octo/demo --state open --author octocat --limit 10 --json
+gitee pr view 42 --repo octo/demo --comments --page 1 --per-page 20 --json
 ```
 
-Show the pull requests related to the current branch or current user:
-
-```bash
-gitee pr status --state open --limit 10 --json
-```
-
-Create a pull request from the current branch:
-
-```bash
-gitee pr create --title "Use local head" --base develop --body "Built from the local branch"
-```
-
-Read a PR body from a file:
-
-```bash
-gitee pr create --repo octo/demo --head feature/body-file --title "Read body file" --body-file ./body.md --json
-```
-
-Comment on a pull request:
-
-```bash
-gitee pr comment 42 --repo octo/demo --body "Ship it" --json
-```
-
-Approve a pull request:
+Once the feedback is addressed, approve and merge:
 
 ```bash
 gitee pr review 42 --repo octo/demo --approve --json
-```
-
-Post review feedback:
-
-```bash
-gitee pr review 42 --comment --body "Looks good" --json
-```
-
-Gitee does not expose a GitHub-style request-changes review state. Comment
-reviews require a body, while approval reviews do not accept body input.
-
-Merge a pull request:
-
-```bash
 gitee pr merge 42 --repo octo/demo --squash --json
 ```
 
-Check out a pull request head branch into the current local repository:
-
-```bash
-gitee pr checkout 42 --repo octo/demo --json
-```
+Gitee has no GitHub-style request-changes review state. Comment reviews require
+a body; approval reviews do not accept one.
 
 ## Local Repository Context
 
-When `--repo` is omitted, `gitee-cli` tries to infer the repository from the
-local git checkout. That keeps common commands short when you are already in the
-right repository.
+When `--repo` is omitted, `gitee-cli` infers the repository from the local git
+checkout, keeping commands short when you are already in the right repository.
 
 <details>
 <summary>Supported <code>origin</code> URL forms</summary>
@@ -252,10 +146,9 @@ right repository.
 
 ## Authentication And Configuration
 
-Most read operations can work without a saved token when the target repository
-is public. Authentication is required for write operations and for some
-user-specific flows. Private repositories and some human-name fallback lookups
-may still require authentication.
+Most reads work without a saved token on public repositories. Authentication is
+required for writes and some user-specific flows; private repositories and some
+human-name fallback lookups may still require it.
 
 Runtime token resolution order:
 
@@ -269,8 +162,8 @@ Config directory resolution order:
 3. `HOME/.config/gitee`
 4. current directory `./.gitee`
 
-By default `~/.config/gitee/config.toml` stores the saved token and non-secret clone
-protocol preference.
+By default `~/.config/gitee/config.toml` stores the saved token and non-secret
+clone protocol preference.
 
 <details>
 <summary>Relevant environment variables</summary>
@@ -279,8 +172,8 @@ protocol preference.
 - `GITEE_CONFIG_DIR`: points directly to the config directory
 - `XDG_CONFIG_HOME`: used when `GITEE_CONFIG_DIR` is not set
 - `HOME`: used for the default config path
-- `GITEE_BASE_URL`: overrides the API base URL, which defaults to
-  `https://gitee.com/api`; mainly useful for tests or local API mocking
+- `GITEE_BASE_URL`: overrides the API base URL (default `https://gitee.com/api`);
+  mainly for tests or local API mocking
 
 </details>
 

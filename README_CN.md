@@ -7,9 +7,8 @@
 AI 驱动的工作流中操作 `gitee.com`。
 
 它为认证、仓库检查、Issue 处理和 Pull Request 工作流提供了一组小而稳
-定的命令接口，避免你直接拼接底层 Gitee API 请求。
-
-安装后的可执行文件名为 `gitee`。
+定的命令接口，避免你直接拼接底层 Gitee API 请求。安装后的可执行文件名
+为 `gitee`。
 
 如果是给 Agent 或大模型做能力发现，建议从下面这条命令开始：
 
@@ -68,15 +67,13 @@ gitee --version
 npx @pkg-ai/gitee-cli --version
 ```
 
-npm 包内置以下平台的预构建二进制：
-
-- Apple Silicon macOS：`aarch64-apple-darwin`
-- Linux x86_64：`x86_64-unknown-linux-musl`
+npm 包内置以下平台的预构建二进制：Apple Silicon macOS
+（`aarch64-apple-darwin`）和 Linux x86_64（`x86_64-unknown-linux-musl`）。
 
 ## 在 Coding Agent 中安装内置 Skill
 
-安装内置的 `using-gitee-cli` skill。默认安装到 `~/.agents/skills`，
-即跨客户端的 Agent Skills 标准目录：
+安装内置的 `using-gitee-cli` skill。默认安装到 `~/.agents/skills`，即
+跨客户端的 Agent Skills 标准目录：
 
 ```bash
 gitee skills install
@@ -88,154 +85,55 @@ gitee skills install
 gitee skills install --agent claude-code
 ```
 
-使用 `gitee skills list` 查看每个目标的安装状态，使用
-`gitee skills uninstall`（可配合 `--agent claude-code`）移除指定目标。
 `--agent` 仅支持 `claude-code`；省略该 flag 即使用默认的跨客户端目标。
+使用 `gitee skills list` 查看安装状态，用 `gitee skills uninstall` 移除目标。
 
 ## 常见工作流
 
-### 在开始工作前检查认证状态
+### 修复一个 Issue 并全程交付 Pull Request
 
-当脚本或 Agent 需要在操作仓库或 API 之前尽早失败时，先执行
-`auth status`：
+这是在终端里完成的一个完整闭环：阅读 Issue、编写修复、提交 PR、应对并
+解决审查评论、获得批准、最后合并。
 
-```bash
-gitee auth status --json
-```
-
-如果希望通过 stdin 保存 token，而不是通过参数传入：
-
-```bash
-printf '%s\n' "$TOKEN" | gitee auth login --with-token --json
-```
-
-### 快速检查仓库信息
-
-已知仓库 slug 时：
-
-```bash
-gitee repo view --repo octo/demo --json
-```
-
-已经位于本地 checkout 内时：
-
-```bash
-gitee repo view --json
-```
-
-使用已保存的克隆协议偏好；首次使用时选择 SSH 或 HTTPS：
-
-```bash
-gitee repo clone octo/demo
-```
-
-使用 HTTPS 克隆到指定目录：
-
-```bash
-gitee repo clone octo/demo demo-https --https --json
-```
-
-### 在修改代码前先阅读 Issue 上下文
-
-列出当前仓库的开放 Issue：
-
-```bash
-gitee issue list --state open --page 1 --per-page 20 --json
-```
-
-查看指定仓库中的单个 Issue：
-
-```bash
-gitee issue view I123 --repo octo/demo --json
-```
-
-需要查看历史讨论时，显式包含评论：
+先阅读你要处理的 Issue，包括它的讨论记录：
 
 ```bash
 gitee issue view I123 --repo octo/demo --comments --page 1 --per-page 20 --json
 ```
 
-修改 Issue 的标题、正文或状态：
+在编辑器里完成修复，然后基于当前分支提交 PR：
 
 ```bash
-gitee issue edit I123 --repo octo/demo --title "Updated title" --state closed --json
+gitee pr create --title "Fix I123" --base develop --body "Closes I123" --json
 ```
 
-以非交互方式发布一条跟进评论：
-
-```bash
-gitee issue comment I123 --repo octo/demo --body "Thanks for the report" --json
-```
-
-### 不离开终端处理 Pull Request
-
-查看一个 Pull Request：
+查看 PR 进行 code review，或在原地回复审查者的评论：
 
 ```bash
 gitee pr view 42 --repo octo/demo --json
+gitee pr comment 42 --repo octo/demo --body "Fixed, please re-review" --json
 ```
 
-按条件列出 Pull Request：
+拉取 PR 的评论，看需要修复哪些问题，修改后推送：
 
 ```bash
-gitee pr list --repo octo/demo --state open --author octocat --limit 10 --json
+gitee pr view 42 --repo octo/demo --comments --page 1 --per-page 20 --json
 ```
 
-查看与当前分支或当前用户相关的 Pull Request：
-
-```bash
-gitee pr status --state open --limit 10 --json
-```
-
-基于当前分支创建 Pull Request：
-
-```bash
-gitee pr create --title "Use local head" --base develop --body "Built from the local branch"
-```
-
-从文件读取 PR 描述：
-
-```bash
-gitee pr create --repo octo/demo --head feature/body-file --title "Read body file" --body-file ./body.md --json
-```
-
-对 Pull Request 发表评论：
-
-```bash
-gitee pr comment 42 --repo octo/demo --body "Ship it" --json
-```
-
-批准一个 Pull Request：
+问题解决后，批准并合并：
 
 ```bash
 gitee pr review 42 --repo octo/demo --approve --json
-```
-
-提交审查意见：
-
-```bash
-gitee pr review 42 --comment --body "Looks good" --json
+gitee pr merge 42 --repo octo/demo --squash --json
 ```
 
 Gitee 没有提供与 GitHub 相同的 request-changes 审查状态。评论式审查必须
 提供正文，而批准审查不接受正文参数。
 
-合并一个 Pull Request：
-
-```bash
-gitee pr merge 42 --repo octo/demo --squash --json
-```
-
-将 Pull Request 的 head 分支检出到当前本地仓库：
-
-```bash
-gitee pr checkout 42 --repo octo/demo --json
-```
-
 ## 本地仓库上下文
 
-当省略 `--repo` 时，`gitee-cli` 会尝试从当前本地 git checkout 中推断目标
-仓库。这会让你在正确仓库目录里执行常见命令时更简洁。
+当省略 `--repo` 时，`gitee-cli` 会从当前本地 git checkout 中推断目标
+仓库，让你在正确仓库目录里执行常见命令时更简洁。
 
 <details>
 <summary>支持的 <code>origin</code> URL 形式</summary>
@@ -250,7 +148,7 @@ gitee pr checkout 42 --repo octo/demo --json
 ## 认证与配置
 
 对于公开仓库，多数只读操作在没有保存 token 的情况下也可以工作。写操作
-和部分与用户身份相关的流程要求认证。私有仓库，以及某些基于 human-name
+和部分与用户身份相关的流程要求认证；私有仓库，以及某些基于 human-name
 回退解析的场景，也可能要求认证。
 
 运行时 token 的解析优先级：
@@ -274,8 +172,8 @@ gitee pr checkout 42 --repo octo/demo --json
 - `GITEE_CONFIG_DIR`：直接指定配置目录
 - `XDG_CONFIG_HOME`：未设置 `GITEE_CONFIG_DIR` 时参与默认路径解析
 - `HOME`：用于默认配置路径
-- `GITEE_BASE_URL`：覆盖 API 基础地址，默认值为
-  `https://gitee.com/api`；主要用于测试或本地 API mock
+- `GITEE_BASE_URL`：覆盖 API 基础地址（默认 `https://gitee.com/api`）；
+  主要用于测试或本地 API mock
 
 </details>
 
