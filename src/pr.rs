@@ -148,10 +148,7 @@ impl PrService {
 
     pub fn create(&self, request: PrCreateRequest) -> Result<CommandOutcome, CommandError> {
         let token = self.require_token("pr create")?;
-        let repo = match request.repo.as_deref() {
-            Some(repo) => resolve_repo(Some(repo))?,
-            None => resolve_repo(None)?,
-        };
+        let repo = resolve_repo(request.repo.as_deref())?;
         let head = resolve_create_head(&repo, request.head.as_deref(), request.repo.is_some())?;
         let base = match request.base {
             Some(base) => base,
@@ -222,10 +219,7 @@ impl PrService {
         ensure_origin_remote_for_checkout()?;
 
         let token = self.token()?;
-        let repo = match request.repo.as_deref() {
-            Some(repo) => resolve_repo(Some(repo))?,
-            None => resolve_repo(None)?,
-        };
+        let repo = resolve_repo(request.repo.as_deref())?;
         let pull_request =
             self.fetch_pull_request_with_fallback(&repo, request.number, token.as_deref())?;
 
