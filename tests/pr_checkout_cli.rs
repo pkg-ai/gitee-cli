@@ -1,7 +1,9 @@
-use assert_cmd::Command;
+mod common;
+
+use common::{assert_ok, cmd, parse_json, repository_payload, run_git};
 use httpmock::Method::GET;
 use httpmock::MockServer;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use tempfile::TempDir;
@@ -20,18 +22,15 @@ fn pr_checkout_fetches_and_checks_out_a_pull_request_branch_in_json_output() {
         ));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(&fixture.working_repo)
         .env("GITEE_BASE_URL", server.base_url())
         .args(["pr", "checkout", "42", "--repo", "octo/demo", "--json"])
         .output()
         .unwrap();
+    assert_ok(&output);
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body: Value = parse_json(&output);
     assert_eq!(body["pull_request"], 42);
     assert_eq!(body["repository"], "octo/demo");
     assert_eq!(body["branch"], "feature/pr-checkout");
@@ -62,8 +61,7 @@ fn pr_checkout_reuses_an_existing_local_branch_on_repeat_invocation() {
         ));
     });
 
-    let first_output = Command::cargo_bin("gitee")
-        .unwrap()
+    let first_output = cmd()
         .current_dir(&fixture.working_repo)
         .env("GITEE_BASE_URL", server.base_url())
         .args(["pr", "checkout", "42", "--repo", "octo/demo"])
@@ -72,8 +70,7 @@ fn pr_checkout_reuses_an_existing_local_branch_on_repeat_invocation() {
 
     assert_eq!(first_output.status.code(), Some(0));
 
-    let second_output = Command::cargo_bin("gitee")
-        .unwrap()
+    let second_output = cmd()
         .current_dir(&fixture.working_repo)
         .env("GITEE_BASE_URL", server.base_url())
         .args(["pr", "checkout", "42", "--repo", "octo/demo"])
@@ -97,26 +94,17 @@ fn pr_checkout_reports_a_missing_pull_request() {
 
     let pr_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/pulls/404");
-        then.status(404).json_body(serde_json::json!({
+        then.status(404).json_body(json!({
             "message": "Not Found"
         }));
     });
 
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": "git@gitee.com:octo/demo.git",
-            "clone_url": "https://gitee.com/octo/demo.git",
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(repository_payload());
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(&fixture.working_repo)
         .env("GITEE_BASE_URL", server.base_url())
         .args(["pr", "checkout", "404", "--repo", "octo/demo"])
@@ -138,8 +126,7 @@ fn pr_checkout_reports_a_missing_pull_request() {
 fn pr_checkout_requires_a_local_git_repository() {
     let temp_dir = TempDir::new().unwrap();
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(temp_dir.path())
         .args(["pr", "checkout", "42", "--repo", "octo/demo"])
         .output()
@@ -168,8 +155,7 @@ fn pr_checkout_surfaces_git_checkout_conflicts() {
         ));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(&fixture.working_repo)
         .env("GITEE_BASE_URL", server.base_url())
         .args(["pr", "checkout", "42", "--repo", "octo/demo"])
@@ -247,8 +233,8 @@ fn checkout_fixture() -> CheckoutFixture {
     }
 }
 
-fn pull_request_payload(number: u64, head_ref: &str, head_sha: &str) -> serde_json::Value {
-    serde_json::json!({
+fn pull_request_payload(number: u64, head_ref: &str, head_sha: &str) -> Value {
+    json!({
         "number": number,
         "state": "open",
         "title": "Checkout target",
@@ -318,20 +304,4 @@ fn git_stdout(repo_dir: &Path, args: &[&str]) -> String {
     );
 
     String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
-fn run_git(repo_dir: &Path, args: &[&str]) {
-    let output = ProcessCommand::new("git")
-        .args(args)
-        .current_dir(repo_dir)
-        .output()
-        .unwrap();
-
-    assert!(
-        output.status.success(),
-        "git command failed: git {}\nstdout:\n{}\nstderr:\n{}",
-        args.join(" "),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 }

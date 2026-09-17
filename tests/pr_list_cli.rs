@@ -1,4 +1,6 @@
-use assert_cmd::Command;
+mod common;
+
+use common::{cmd, run_json};
 use httpmock::Method::GET;
 use httpmock::MockServer;
 use serde_json::Value;
@@ -78,10 +80,9 @@ fn pr_list_supports_filters_in_json_output() {
         ]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args([
+    let body = run_json(
+        &server,
+        &[
             "pr",
             "list",
             "--repo",
@@ -99,14 +100,8 @@ fn pr_list_supports_filters_in_json_output() {
             "--limit",
             "2",
             "--json",
-        ])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+        ],
+    );
     assert_eq!(body["repository"], "octo/demo");
     assert_eq!(body["source"], "explicit");
     assert_eq!(body["count"], 2);
@@ -191,10 +186,9 @@ fn pr_list_supports_gh_style_json_field_selection() {
         ]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args([
+    let body = run_json(
+        &server,
+        &[
             "pr",
             "list",
             "--repo",
@@ -203,14 +197,8 @@ fn pr_list_supports_gh_style_json_field_selection() {
             "2",
             "--json",
             "number,title,url",
-        ])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+        ],
+    );
     let items = body.as_array().unwrap();
     assert_eq!(items.len(), 2);
     assert_eq!(items[0]["number"], 42);
@@ -266,10 +254,9 @@ fn pr_list_supports_extended_gh_style_json_fields() {
         ]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args([
+    let body = run_json(
+        &server,
+        &[
             "pr",
             "list",
             "--repo",
@@ -278,14 +265,8 @@ fn pr_list_supports_extended_gh_style_json_fields() {
             "2",
             "--json",
             "number,title,url,state,createdAt,isDraft,headRefName",
-        ])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+        ],
+    );
     let items = body.as_array().unwrap();
     assert_eq!(items[0]["number"], 42);
     assert_eq!(items[0]["title"], "First PR");
@@ -339,15 +320,13 @@ fn pr_list_supports_default_text_output() {
         ]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .args(["pr", "list", "--repo", "octo/demo"])
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         "#42 open First PR (octocat)"
@@ -369,8 +348,7 @@ fn pr_list_fails_when_repository_is_missing() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .args(["pr", "list", "--repo", "octo/missing"])
         .output()

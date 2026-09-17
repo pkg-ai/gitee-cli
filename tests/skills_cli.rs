@@ -1,9 +1,11 @@
+mod common;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
-use serde_json::Value;
+use common::{assert_ok, cmd, parse_json};
 use tempfile::TempDir;
 
 #[test]
@@ -16,8 +18,7 @@ fn skills_install_copies_the_bundled_skill_into_the_agents_skills_dir() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    assert_ok(&output);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         format!("installed using-gitee-cli to {}", skill_dir.display())
@@ -43,10 +44,9 @@ fn skills_install_updates_an_existing_installation_and_reports_json() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    assert_ok(&output);
 
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body = parse_json(&output);
     assert_eq!(body["name"], "using-gitee-cli");
     assert_eq!(body["agent"], "default");
     assert_eq!(body["installed"], true);
@@ -69,8 +69,7 @@ fn skills_list_reports_each_target_and_supports_agent_filtering() {
         .output()
         .unwrap();
 
-    assert_eq!(initial.status.code(), Some(0));
-    assert!(initial.stderr.is_empty());
+    assert_ok(&initial);
     assert_eq!(
         String::from_utf8_lossy(&initial.stdout).trim(),
         format!(
@@ -85,9 +84,8 @@ fn skills_list_reports_each_target_and_supports_agent_filtering() {
         .output()
         .unwrap();
 
-    assert_eq!(initial_json.status.code(), Some(0));
-    assert!(initial_json.stderr.is_empty());
-    let initial_body: Value = serde_json::from_slice(&initial_json.stdout).unwrap();
+    assert_ok(&initial_json);
+    let initial_body = parse_json(&initial_json);
     let rows = initial_body.as_array().unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0]["name"], "using-gitee-cli");
@@ -127,9 +125,8 @@ fn skills_list_reports_each_target_and_supports_agent_filtering() {
         .output()
         .unwrap();
 
-    assert_eq!(filtered.status.code(), Some(0));
-    assert!(filtered.stderr.is_empty());
-    let filtered_body: Value = serde_json::from_slice(&filtered.stdout).unwrap();
+    assert_ok(&filtered);
+    let filtered_body = parse_json(&filtered);
     let rows = filtered_body.as_array().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["agent"], "claude-code");
@@ -141,8 +138,7 @@ fn skills_list_reports_each_target_and_supports_agent_filtering() {
         .output()
         .unwrap();
 
-    assert_eq!(filtered_text.status.code(), Some(0));
-    assert!(filtered_text.stderr.is_empty());
+    assert_ok(&filtered_text);
     assert_eq!(
         String::from_utf8_lossy(&filtered_text.stdout).trim(),
         format!(
@@ -162,8 +158,7 @@ fn skills_uninstall_removes_the_exact_skill_directory_and_is_idempotent() {
         .output()
         .unwrap();
 
-    assert_eq!(missing.status.code(), Some(0));
-    assert!(missing.stderr.is_empty());
+    assert_ok(&missing);
     assert_eq!(
         String::from_utf8_lossy(&missing.stdout).trim(),
         "using-gitee-cli is not installed"
@@ -181,11 +176,10 @@ fn skills_uninstall_removes_the_exact_skill_directory_and_is_idempotent() {
         .output()
         .unwrap();
 
-    assert_eq!(removed.status.code(), Some(0));
-    assert!(removed.stderr.is_empty());
+    assert_ok(&removed);
     assert!(!skill_dir.exists());
 
-    let body: Value = serde_json::from_slice(&removed.stdout).unwrap();
+    let body = parse_json(&removed);
     assert_eq!(body["name"], "using-gitee-cli");
     assert_eq!(body["agent"], "default");
     assert_eq!(body["installed"], false);
@@ -195,14 +189,9 @@ fn skills_uninstall_removes_the_exact_skill_directory_and_is_idempotent() {
 
 #[test]
 fn help_describes_skills_commands_and_json_metadata() {
-    let text_output = Command::cargo_bin("gitee")
-        .unwrap()
-        .args(["help", "skills"])
-        .output()
-        .unwrap();
+    let text_output = cmd().args(["help", "skills"]).output().unwrap();
 
-    assert_eq!(text_output.status.code(), Some(0));
-    assert!(text_output.stderr.is_empty());
+    assert_ok(&text_output);
 
     let stdout = String::from_utf8_lossy(&text_output.stdout);
     assert!(stdout.contains("Manage the bundled using-gitee-cli skill"));
@@ -210,28 +199,24 @@ fn help_describes_skills_commands_and_json_metadata() {
     assert!(stdout.contains("uninstall"));
     assert!(stdout.contains("list"));
 
-    let direct_install_help = Command::cargo_bin("gitee")
-        .unwrap()
+    let direct_install_help = cmd()
         .args(["skills", "install", "--help"])
         .output()
         .unwrap();
 
-    assert_eq!(direct_install_help.status.code(), Some(0));
-    assert!(direct_install_help.stderr.is_empty());
+    assert_ok(&direct_install_help);
     let direct_stdout = String::from_utf8_lossy(&direct_install_help.stdout);
     assert!(direct_stdout.contains("--json"));
     assert!(!direct_stdout.contains("--json [<FIELDS>]"));
 
-    let install_json_output = Command::cargo_bin("gitee")
-        .unwrap()
+    let install_json_output = cmd()
         .args(["help", "skills", "install", "--json"])
         .output()
         .unwrap();
 
-    assert_eq!(install_json_output.status.code(), Some(0));
-    assert!(install_json_output.stderr.is_empty());
+    assert_ok(&install_json_output);
 
-    let body: Value = serde_json::from_slice(&install_json_output.stdout).unwrap();
+    let body = parse_json(&install_json_output);
     assert_eq!(body["path"], "skills install");
     assert_eq!(body["gh_equivalent"], "not_applicable");
     assert_eq!(body["supports_json"], true);
@@ -250,16 +235,11 @@ fn help_describes_skills_commands_and_json_metadata() {
         (["help", "skills", "list", "--json"], "skills list"),
         (["help", "skills", "ls", "--json"], "skills list"),
     ] {
-        let output = Command::cargo_bin("gitee")
-            .unwrap()
-            .args(topic)
-            .output()
-            .unwrap();
+        let output = cmd().args(topic).output().unwrap();
 
-        assert_eq!(output.status.code(), Some(0));
-        assert!(output.stderr.is_empty());
+        assert_ok(&output);
 
-        let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let body = parse_json(&output);
         assert_eq!(body["path"], path);
         assert_eq!(body["gh_equivalent"], "not_applicable");
         assert_eq!(body["supports_json"], true);
@@ -268,24 +248,18 @@ fn help_describes_skills_commands_and_json_metadata() {
 
 #[test]
 fn root_help_json_includes_the_skills_group() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .args(["help", "--json"])
-        .output()
-        .unwrap();
+    let output = cmd().args(["help", "--json"]).output().unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    assert_ok(&output);
 
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body = parse_json(&output);
     let commands = body["commands"].as_array().unwrap();
     assert!(commands.iter().any(|command| command["name"] == "skills"));
 }
 
 #[test]
 fn skills_commands_fail_with_config_error_when_home_cannot_be_resolved() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env_remove("HOME")
         .env_remove("USERPROFILE")
         .env_remove("HOMEDRIVE")
@@ -312,8 +286,7 @@ fn skills_install_with_agent_claude_code_writes_to_the_claude_code_skill_dir() {
         .output()
         .unwrap();
 
-    assert_eq!(text.status.code(), Some(0));
-    assert!(text.stderr.is_empty());
+    assert_ok(&text);
     assert_eq!(
         String::from_utf8_lossy(&text.stdout).trim(),
         format!("installed using-gitee-cli to {}", text_dir.display())
@@ -330,10 +303,9 @@ fn skills_install_with_agent_claude_code_writes_to_the_claude_code_skill_dir() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    assert_ok(&output);
 
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body = parse_json(&output);
     assert_eq!(body["name"], "using-gitee-cli");
     assert_eq!(body["agent"], "claude-code");
     assert_eq!(body["installed"], true);
@@ -375,10 +347,10 @@ fn skills_uninstall_with_agent_claude_code_removes_only_the_selected_target() {
         .args(["skills", "uninstall", "--agent", "claude-code", "--json"])
         .output()
         .unwrap();
-    assert_eq!(removed_cc.status.code(), Some(0));
+    assert_ok(&removed_cc);
     assert!(!claude_dir.exists());
 
-    let body: Value = serde_json::from_slice(&removed_cc.stdout).unwrap();
+    let body = parse_json(&removed_cc);
     assert_eq!(body["agent"], "claude-code");
     assert_eq!(body["action"], "uninstalled");
 
@@ -393,8 +365,7 @@ fn skills_uninstall_with_agent_claude_code_removes_only_the_selected_target() {
         .args(["skills", "uninstall", "--agent", "claude-code"])
         .output()
         .unwrap();
-    assert_eq!(removed_cc_text.status.code(), Some(0));
-    assert!(removed_cc_text.stderr.is_empty());
+    assert_ok(&removed_cc_text);
     assert!(!claude_dir.exists());
     assert_eq!(
         String::from_utf8_lossy(&removed_cc_text.stdout).trim(),
@@ -428,7 +399,7 @@ fn skills_rejects_an_invalid_or_ambiguous_agent_value() {
 }
 
 fn gitee_with_home(home: &Path) -> Command {
-    let mut command = Command::cargo_bin("gitee").unwrap();
+    let mut command = cmd();
     command
         .env("HOME", home)
         .env_remove("USERPROFILE")

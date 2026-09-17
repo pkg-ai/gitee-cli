@@ -1,40 +1,47 @@
-use assert_cmd::Command;
+mod common;
+
+use common::{cmd, git_repo_with_detached_head, git_repo_with_remote, run_json};
 use httpmock::Method::GET;
 use httpmock::MockServer;
-use serde_json::Value;
-use std::path::Path;
-use std::process::Command as ProcessCommand;
+use serde_json::{Value, json};
 use tempfile::TempDir;
+
+/// The canonical `octo/demo` repository API response used by most `repo view` tests.
+fn demo_repo_payload() -> Value {
+    json!({
+        "full_name": "octo/demo",
+        "name": "demo",
+        "path": "demo",
+        "html_url": "https://gitee.com/octo/demo",
+        "ssh_url": "git@gitee.com:octo/demo.git",
+        "clone_url": "https://gitee.com/octo/demo.git",
+        "fork": false,
+        "default_branch": "main"
+    })
+}
+
+/// The canonical private `hzw-dev/tip-ucan` repository API response.
+fn private_repo_payload() -> Value {
+    json!({
+        "full_name": "hzw-dev/tip-ucan",
+        "human_name": "hzw/tip-ucan",
+        "path": "tip-ucan",
+        "html_url": "https://gitee.com/hzw-dev/tip-ucan.git",
+        "ssh_url": "git@gitee.com:hzw-dev/tip-ucan.git",
+        "fork": false,
+        "default_branch": "main"
+    })
+}
 
 #[test]
 fn repo_view_supports_explicit_repo_slug_in_json_output() {
     let server = MockServer::start();
-
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "name": "demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": "git@gitee.com:octo/demo.git",
-            "clone_url": "https://gitee.com/octo/demo.git",
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(demo_repo_payload());
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args(["repo", "view", "--repo", "octo/demo", "--json"])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body = run_json(&server, &["repo", "view", "--repo", "octo/demo", "--json"]);
     assert_eq!(body["source"], "explicit");
     assert_eq!(body["owner"], "octo");
     assert_eq!(body["name"], "demo");
@@ -52,39 +59,22 @@ fn repo_view_supports_explicit_repo_slug_in_json_output() {
 #[test]
 fn repo_view_supports_gh_style_json_field_selection() {
     let server = MockServer::start();
-
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "name": "demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": "git@gitee.com:octo/demo.git",
-            "clone_url": "https://gitee.com/octo/demo.git",
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(demo_repo_payload());
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args([
+    let body = run_json(
+        &server,
+        &[
             "repo",
             "view",
             "--repo",
             "octo/demo",
             "--json",
             "nameWithOwner,url",
-        ])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+        ],
+    );
     assert_eq!(body["nameWithOwner"], "octo/demo");
     assert_eq!(body["url"], "https://gitee.com/octo/demo");
 
@@ -99,39 +89,22 @@ fn repo_view_supports_gh_style_json_field_selection() {
 #[test]
 fn repo_view_supports_extended_gh_style_json_fields() {
     let server = MockServer::start();
-
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "name": "demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": "git@gitee.com:octo/demo.git",
-            "clone_url": "https://gitee.com/octo/demo.git",
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(demo_repo_payload());
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args([
+    let body = run_json(
+        &server,
+        &[
             "repo",
             "view",
             "--repo",
             "octo/demo",
             "--json",
             "name,nameWithOwner,url,defaultBranch,sshUrl,cloneUrl,isFork",
-        ])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+        ],
+    );
     assert_eq!(body["name"], "demo");
     assert_eq!(body["nameWithOwner"], "octo/demo");
     assert_eq!(body["url"], "https://gitee.com/octo/demo");
@@ -146,31 +119,15 @@ fn repo_view_supports_extended_gh_style_json_fields() {
 #[test]
 fn repo_view_handles_private_repo_payload_without_clone_url() {
     let server = MockServer::start();
-
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/hzw-dev/tip-ucan");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "hzw-dev/tip-ucan",
-            "human_name": "hzw/tip-ucan",
-            "path": "tip-ucan",
-            "html_url": "https://gitee.com/hzw-dev/tip-ucan.git",
-            "ssh_url": "git@gitee.com:hzw-dev/tip-ucan.git",
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(private_repo_payload());
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args(["repo", "view", "--repo", "hzw-dev/tip-ucan", "--json"])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body = run_json(
+        &server,
+        &["repo", "view", "--repo", "hzw-dev/tip-ucan", "--json"],
+    );
     assert_eq!(body["full_name"], "hzw-dev/tip-ucan");
     assert_eq!(body["owner"], "hzw-dev");
     assert_eq!(body["name"], "tip-ucan");
@@ -188,30 +145,17 @@ fn repo_view_infers_repository_and_current_branch_from_https_origin() {
 
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "name": "demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": "git@gitee.com:octo/demo.git",
-            "clone_url": "https://gitee.com/octo/demo.git",
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(demo_repo_payload());
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .args(["repo", "view", "--json"])
         .output()
         .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    common::assert_ok(&output);
+    let body = common::parse_json(&output);
     assert_eq!(body["source"], "local");
     assert_eq!(body["owner"], "octo");
     assert_eq!(body["name"], "demo");
@@ -229,30 +173,17 @@ fn repo_view_infers_repository_from_ssh_origin() {
 
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "name": "demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": "git@gitee.com:octo/demo.git",
-            "clone_url": "https://gitee.com/octo/demo.git",
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(demo_repo_payload());
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .args(["repo", "view", "--json"])
         .output()
         .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    common::assert_ok(&output);
+    let body = common::parse_json(&output);
     assert_eq!(body["source"], "local");
     assert_eq!(body["owner"], "octo");
     assert_eq!(body["name"], "demo");
@@ -270,41 +201,26 @@ fn repo_view_resolves_human_name_remote_to_canonical_private_repo() {
         when.method(GET)
             .path("/v5/repos/hzw/tip-ucan")
             .header("authorization", "Bearer secret-token");
-        then.status(404).json_body(serde_json::json!({
-            "message": "Not Found"
-        }));
+        then.status(404)
+            .json_body(json!({ "message": "Not Found" }));
     });
 
     let repo_list_mock = server.mock(|when, then| {
         when.method(GET)
             .path("/v5/user/repos")
             .header("authorization", "Bearer secret-token");
-        then.status(200).json_body(serde_json::json!([
-            {
-                "full_name": "hzw-dev/tip-ucan",
-                "human_name": "hzw/tip-ucan",
-                "path": "tip-ucan",
-                "html_url": "https://gitee.com/hzw-dev/tip-ucan.git",
-                "ssh_url": "git@gitee.com:hzw-dev/tip-ucan.git",
-                "fork": false,
-                "default_branch": "main"
-            }
-        ]));
+        then.status(200).json_body(json!([private_repo_payload()]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args(["repo", "view", "--json"])
         .output()
         .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    common::assert_ok(&output);
+    let body = common::parse_json(&output);
     assert_eq!(body["source"], "local");
     assert_eq!(body["owner"], "hzw-dev");
     assert_eq!(body["name"], "tip-ucan");
@@ -318,29 +234,17 @@ fn repo_view_resolves_human_name_remote_to_canonical_private_repo() {
 #[test]
 fn repo_view_renders_stable_text_output() {
     let server = MockServer::start();
-
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "name": "demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": "git@gitee.com:octo/demo.git",
-            "clone_url": "https://gitee.com/octo/demo.git",
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(demo_repo_payload());
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .args(["repo", "view", "--repo", "octo/demo"])
         .output()
         .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
+    common::assert_ok(&output);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         "\
@@ -353,7 +257,6 @@ ssh url: git@gitee.com:octo/demo.git
 clone url: https://gitee.com/octo/demo.git
 source: explicit"
     );
-    assert!(output.stderr.is_empty());
 
     repo_mock.assert_hits(1);
 }
@@ -362,8 +265,7 @@ source: explicit"
 fn repo_view_fails_with_a_stable_git_error_when_head_is_detached() {
     let repo_dir = git_repo_with_detached_head("https://gitee.com/octo/demo.git");
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .args(["repo", "view", "--json"])
         .output()
@@ -381,8 +283,7 @@ fn repo_view_fails_with_a_stable_git_error_when_head_is_detached() {
 fn repo_view_fails_when_not_inside_a_git_repository() {
     let working_dir = TempDir::new().unwrap();
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(working_dir.path())
         .args(["repo", "view", "--json"])
         .output()
@@ -393,53 +294,5 @@ fn repo_view_fails_when_not_inside_a_git_repository() {
     assert_eq!(
         String::from_utf8_lossy(&output.stderr).trim(),
         "git context error: not inside a git repository"
-    );
-}
-
-fn git_repo_with_remote(remote_url: &str, branch: &str) -> TempDir {
-    let repo_dir = TempDir::new().unwrap();
-
-    run_git(repo_dir.path(), &["init"]);
-    run_git(repo_dir.path(), &["checkout", "-b", branch]);
-    run_git(repo_dir.path(), &["remote", "add", "origin", remote_url]);
-
-    repo_dir
-}
-
-fn git_repo_with_detached_head(remote_url: &str) -> TempDir {
-    let repo_dir = TempDir::new().unwrap();
-
-    run_git(repo_dir.path(), &["init"]);
-    std::fs::write(repo_dir.path().join("README.md"), "hello\n").unwrap();
-    run_git(repo_dir.path(), &["add", "README.md"]);
-    run_git(
-        repo_dir.path(),
-        &[
-            "-c",
-            "user.name=Test User",
-            "-c",
-            "user.email=test@example.com",
-            "commit",
-            "-m",
-            "init",
-        ],
-    );
-    run_git(repo_dir.path(), &["remote", "add", "origin", remote_url]);
-    run_git(repo_dir.path(), &["checkout", "--detach"]);
-
-    repo_dir
-}
-
-fn run_git(repo_dir: &Path, args: &[&str]) {
-    let status = ProcessCommand::new("git")
-        .args(args)
-        .current_dir(repo_dir)
-        .status()
-        .unwrap();
-
-    assert!(
-        status.success(),
-        "git command failed: git {}",
-        args.join(" ")
     );
 }

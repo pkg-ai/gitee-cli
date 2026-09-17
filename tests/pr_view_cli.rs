@@ -1,59 +1,50 @@
-use assert_cmd::Command;
+mod common;
+
+use common::{cmd, git_repo_with_remote, run_json};
 use httpmock::Method::GET;
 use httpmock::MockServer;
-use serde_json::Value;
-use std::path::Path;
-use std::process::Command as ProcessCommand;
-use tempfile::TempDir;
+use serde_json::{Value, json};
+
+/// The canonical PR response used by most `pr view` tests.
+fn pr_payload(body: Option<&str>) -> Value {
+    json!({
+        "number": 42,
+        "state": "open",
+        "title": "Fix pull request rendering",
+        "body": body,
+        "html_url": "https://gitee.com/octo/demo/pulls/42",
+        "draft": false,
+        "mergeable": true,
+        "created_at": "2026-03-20T09:00:00+08:00",
+        "updated_at": "2026-03-20T10:00:00+08:00",
+        "merged_at": null,
+        "user": { "login": "octocat" },
+        "head": {
+            "ref": "feature/pr-view",
+            "sha": "abc123",
+            "repo": { "full_name": "octo/demo" }
+        },
+        "base": {
+            "ref": "main",
+            "sha": "def456",
+            "repo": { "full_name": "octo/demo" }
+        }
+    })
+}
 
 #[test]
 fn pr_view_supports_explicit_repo_in_json_output() {
     let server = MockServer::start();
-
     let pr_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/pulls/42");
-        then.status(200).json_body(serde_json::json!({
-            "number": 42,
-            "state": "open",
-            "title": "Fix pull request rendering",
-            "body": "Adds stable PR rendering",
-            "html_url": "https://gitee.com/octo/demo/pulls/42",
-            "draft": false,
-            "mergeable": true,
-            "created_at": "2026-03-20T09:00:00+08:00",
-            "updated_at": "2026-03-20T10:00:00+08:00",
-            "merged_at": null,
-            "user": {
-                "login": "octocat"
-            },
-            "head": {
-                "ref": "feature/pr-view",
-                "sha": "abc123",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            },
-            "base": {
-                "ref": "main",
-                "sha": "def456",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            }
-        }));
+        then.status(200)
+            .json_body(pr_payload(Some("Adds stable PR rendering")));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args(["pr", "view", "42", "--repo", "octo/demo", "--json"])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body = run_json(
+        &server,
+        &["pr", "view", "42", "--repo", "octo/demo", "--json"],
+    );
     assert_eq!(body["number"], 42);
     assert_eq!(body["state"], "open");
     assert_eq!(body["title"], "Fix pull request rendering");
@@ -79,44 +70,15 @@ fn pr_view_supports_explicit_repo_in_json_output() {
 #[test]
 fn pr_view_supports_gh_style_json_field_selection() {
     let server = MockServer::start();
-
     let pr_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/pulls/42");
-        then.status(200).json_body(serde_json::json!({
-            "number": 42,
-            "state": "open",
-            "title": "Fix pull request rendering",
-            "body": "Adds stable PR rendering",
-            "html_url": "https://gitee.com/octo/demo/pulls/42",
-            "draft": false,
-            "mergeable": true,
-            "created_at": "2026-03-20T09:00:00+08:00",
-            "updated_at": "2026-03-20T10:00:00+08:00",
-            "merged_at": null,
-            "user": {
-                "login": "octocat"
-            },
-            "head": {
-                "ref": "feature/pr-view",
-                "sha": "abc123",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            },
-            "base": {
-                "ref": "main",
-                "sha": "def456",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            }
-        }));
+        then.status(200)
+            .json_body(pr_payload(Some("Adds stable PR rendering")));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args([
+    let body = run_json(
+        &server,
+        &[
             "pr",
             "view",
             "42",
@@ -124,14 +86,8 @@ fn pr_view_supports_gh_style_json_field_selection() {
             "octo/demo",
             "--json",
             "number,url,title",
-        ])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+        ],
+    );
     assert_eq!(body["number"], 42);
     assert_eq!(body["title"], "Fix pull request rendering");
     assert_eq!(body["url"], "https://gitee.com/octo/demo/pulls/42");
@@ -146,44 +102,15 @@ fn pr_view_supports_gh_style_json_field_selection() {
 #[test]
 fn pr_view_supports_extended_gh_style_json_fields() {
     let server = MockServer::start();
-
     let pr_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/pulls/42");
-        then.status(200).json_body(serde_json::json!({
-            "number": 42,
-            "state": "open",
-            "title": "Fix pull request rendering",
-            "body": "Adds stable PR rendering",
-            "html_url": "https://gitee.com/octo/demo/pulls/42",
-            "draft": false,
-            "mergeable": true,
-            "created_at": "2026-03-20T09:00:00+08:00",
-            "updated_at": "2026-03-20T10:00:00+08:00",
-            "merged_at": null,
-            "user": {
-                "login": "octocat"
-            },
-            "head": {
-                "ref": "feature/pr-view",
-                "sha": "abc123",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            },
-            "base": {
-                "ref": "main",
-                "sha": "def456",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            }
-        }));
+        then.status(200)
+            .json_body(pr_payload(Some("Adds stable PR rendering")));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args([
+    let body = run_json(
+        &server,
+        &[
             "pr",
             "view",
             "42",
@@ -191,14 +118,8 @@ fn pr_view_supports_extended_gh_style_json_fields() {
             "octo/demo",
             "--json",
             "number,title,url,state,body,createdAt,updatedAt,isDraft,mergeable,headRefName,headRefOid,baseRefName,baseRefOid",
-        ])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+        ],
+    );
     assert_eq!(body["number"], 42);
     assert_eq!(body["title"], "Fix pull request rendering");
     assert_eq!(body["url"], "https://gitee.com/octo/demo/pulls/42");
@@ -219,63 +140,31 @@ fn pr_view_supports_extended_gh_style_json_fields() {
 #[test]
 fn pr_view_includes_paginated_comments_when_requested() {
     let server = MockServer::start();
-
     let pr_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/pulls/42");
-        then.status(200).json_body(serde_json::json!({
-            "number": 42,
-            "state": "open",
-            "title": "Fix pull request rendering",
-            "body": "Adds stable PR rendering",
-            "html_url": "https://gitee.com/octo/demo/pulls/42",
-            "draft": false,
-            "mergeable": true,
-            "created_at": "2026-03-20T09:00:00+08:00",
-            "updated_at": "2026-03-20T10:00:00+08:00",
-            "merged_at": null,
-            "user": {
-                "login": "octocat"
-            },
-            "head": {
-                "ref": "feature/pr-view",
-                "sha": "abc123",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            },
-            "base": {
-                "ref": "main",
-                "sha": "def456",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            }
-        }));
+        then.status(200)
+            .json_body(pr_payload(Some("Adds stable PR rendering")));
     });
-
     let comments_mock = server.mock(|when, then| {
         when.method(GET)
             .path("/v5/repos/octo/demo/pulls/42/comments")
             .query_param("page", "2")
             .query_param("per_page", "1");
-        then.status(200).json_body(serde_json::json!([
+        then.status(200).json_body(json!([
             {
                 "id": 99,
                 "body": "Please add a regression test",
                 "html_url": "https://gitee.com/octo/demo/pulls/42#note_99",
                 "created_at": "2026-03-20T12:30:00+08:00",
                 "updated_at": "2026-03-20T12:31:00+08:00",
-                "user": {
-                    "login": "carol"
-                }
+                "user": { "login": "carol" }
             }
         ]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args([
+    let body = run_json(
+        &server,
+        &[
             "pr",
             "view",
             "42",
@@ -287,14 +176,8 @@ fn pr_view_includes_paginated_comments_when_requested() {
             "--per-page",
             "1",
             "--json",
-        ])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+        ],
+    );
     assert_eq!(body["comments_included"], true);
     assert_eq!(body["comments_page"], 2);
     assert_eq!(body["comments_per_page"], 1);
@@ -317,66 +200,32 @@ fn pr_view_includes_paginated_comments_when_requested() {
 #[test]
 fn pr_view_renders_body_and_comments_in_text_output() {
     let server = MockServer::start();
-
     let pr_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/pulls/42");
-        then.status(200).json_body(serde_json::json!({
-            "number": 42,
-            "state": "open",
-            "title": "Fix pull request rendering",
-            "body": "Adds stable PR rendering",
-            "html_url": "https://gitee.com/octo/demo/pulls/42",
-            "draft": false,
-            "mergeable": true,
-            "created_at": "2026-03-20T09:00:00+08:00",
-            "updated_at": "2026-03-20T10:00:00+08:00",
-            "merged_at": null,
-            "user": {
-                "login": "octocat"
-            },
-            "head": {
-                "ref": "feature/pr-view",
-                "sha": "abc123",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            },
-            "base": {
-                "ref": "main",
-                "sha": "def456",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            }
-        }));
+        then.status(200)
+            .json_body(pr_payload(Some("Adds stable PR rendering")));
     });
-
     let comments_mock = server.mock(|when, then| {
         when.method(GET)
             .path("/v5/repos/octo/demo/pulls/42/comments");
-        then.status(200).json_body(serde_json::json!([
+        then.status(200).json_body(json!([
             {
                 "id": 99,
                 "body": "Please add a regression test",
                 "html_url": "https://gitee.com/octo/demo/pulls/42#note_99",
                 "created_at": "2026-03-20T12:30:00+08:00",
                 "updated_at": "2026-03-20T12:31:00+08:00",
-                "user": {
-                    "login": "carol"
-                }
+                "user": { "login": "carol" }
             }
         ]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .args(["pr", "view", "42", "--repo", "octo/demo", "--comments"])
         .output()
         .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         "\
@@ -405,50 +254,18 @@ Please add a regression test"
 #[test]
 fn pr_view_omits_body_without_comments_even_when_body_present() {
     let server = MockServer::start();
-
     let pr_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/pulls/42");
-        then.status(200).json_body(serde_json::json!({
-            "number": 42,
-            "state": "open",
-            "title": "Fix pull request rendering",
-            "body": "A deliberate long body",
-            "html_url": "https://gitee.com/octo/demo/pulls/42",
-            "draft": false,
-            "mergeable": true,
-            "created_at": "2026-03-20T09:00:00+08:00",
-            "updated_at": "2026-03-20T10:00:00+08:00",
-            "merged_at": null,
-            "user": {
-                "login": "octocat"
-            },
-            "head": {
-                "ref": "feature/pr-view",
-                "sha": "abc123",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            },
-            "base": {
-                "ref": "main",
-                "sha": "def456",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            }
-        }));
+        then.status(200)
+            .json_body(pr_payload(Some("A deliberate long body")));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .args(["pr", "view", "42", "--repo", "octo/demo"])
         .output()
         .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
+    common::assert_ok(&output);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("comments included: false"));
     assert!(!stdout.contains("body:"));
@@ -460,57 +277,21 @@ fn pr_view_omits_body_without_comments_even_when_body_present() {
 #[test]
 fn pr_view_skips_comment_history_by_default() {
     let server = MockServer::start();
-
     let pr_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/pulls/42");
-        then.status(200).json_body(serde_json::json!({
-            "number": 42,
-            "state": "open",
-            "title": "Fix pull request rendering",
-            "body": "Adds stable PR rendering",
-            "html_url": "https://gitee.com/octo/demo/pulls/42",
-            "draft": false,
-            "mergeable": true,
-            "created_at": "2026-03-20T09:00:00+08:00",
-            "updated_at": "2026-03-20T10:00:00+08:00",
-            "merged_at": null,
-            "user": {
-                "login": "octocat"
-            },
-            "head": {
-                "ref": "feature/pr-view",
-                "sha": "abc123",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            },
-            "base": {
-                "ref": "main",
-                "sha": "def456",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            }
-        }));
+        then.status(200)
+            .json_body(pr_payload(Some("Adds stable PR rendering")));
     });
-
     let comments_mock = server.mock(|when, then| {
         when.method(GET)
             .path("/v5/repos/octo/demo/pulls/42/comments");
-        then.status(200).json_body(serde_json::json!([]));
+        then.status(200).json_body(json!([]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args(["pr", "view", "42", "--repo", "octo/demo", "--json"])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body = run_json(
+        &server,
+        &["pr", "view", "42", "--repo", "octo/demo", "--json"],
+    );
     assert_eq!(body["comments_included"], false);
     assert_eq!(body["comments_page"], Value::Null);
     assert_eq!(body["comments_per_page"], Value::Null);
@@ -522,8 +303,7 @@ fn pr_view_skips_comment_history_by_default() {
 
 #[test]
 fn pr_view_rejects_unknown_json_fields_with_a_specific_usage_error() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .args([
             "pr",
             "view",
@@ -553,16 +333,14 @@ fn pr_view_resolves_human_name_remote_to_canonical_private_repo() {
         when.method(GET)
             .path("/v5/repos/hzw/tip-ucan/pulls/42")
             .header("authorization", "Bearer secret-token");
-        then.status(404).json_body(serde_json::json!({
-            "message": "Not Found"
-        }));
+        then.status(404)
+            .json_body(json!({ "message": "Not Found" }));
     });
-
     let repo_list_mock = server.mock(|when, then| {
         when.method(GET)
             .path("/v5/user/repos")
             .header("authorization", "Bearer secret-token");
-        then.status(200).json_body(serde_json::json!([
+        then.status(200).json_body(json!([
             {
                 "full_name": "hzw-dev/tip-ucan",
                 "human_name": "hzw/tip-ucan",
@@ -574,12 +352,11 @@ fn pr_view_resolves_human_name_remote_to_canonical_private_repo() {
             }
         ]));
     });
-
     let canonical_pr_mock = server.mock(|when, then| {
         when.method(GET)
             .path("/v5/repos/hzw-dev/tip-ucan/pulls/42")
             .header("authorization", "Bearer secret-token");
-        then.status(200).json_body(serde_json::json!({
+        then.status(200).json_body(json!({
             "number": 42,
             "state": "open",
             "title": "Canonical PR",
@@ -590,39 +367,29 @@ fn pr_view_resolves_human_name_remote_to_canonical_private_repo() {
             "created_at": "2026-03-20T09:00:00+08:00",
             "updated_at": "2026-03-20T10:00:00+08:00",
             "merged_at": null,
-            "user": {
-                "login": "octocat"
-            },
+            "user": { "login": "octocat" },
             "head": {
                 "ref": "feature/human-name",
                 "sha": "abc123",
-                "repo": {
-                    "full_name": "hzw-dev/tip-ucan"
-                }
+                "repo": { "full_name": "hzw-dev/tip-ucan" }
             },
             "base": {
                 "ref": "main",
                 "sha": "def456",
-                "repo": {
-                    "full_name": "hzw-dev/tip-ucan"
-                }
+                "repo": { "full_name": "hzw-dev/tip-ucan" }
             }
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args(["pr", "view", "42", "--json"])
         .output()
         .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    common::assert_ok(&output);
+    let body = common::parse_json(&output);
     assert_eq!(body["repository"], "hzw-dev/tip-ucan");
     assert_eq!(body["head_repository"], "hzw-dev/tip-ucan");
     assert_eq!(body["base_repository"], "hzw-dev/tip-ucan");
@@ -635,49 +402,17 @@ fn pr_view_resolves_human_name_remote_to_canonical_private_repo() {
 #[test]
 fn pr_view_renders_stable_text_output() {
     let server = MockServer::start();
-
     let pr_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/pulls/42");
-        then.status(200).json_body(serde_json::json!({
-            "number": 42,
-            "state": "open",
-            "title": "Fix pull request rendering",
-            "body": null,
-            "html_url": "https://gitee.com/octo/demo/pulls/42",
-            "draft": false,
-            "mergeable": true,
-            "created_at": "2026-03-20T09:00:00+08:00",
-            "updated_at": "2026-03-20T10:00:00+08:00",
-            "merged_at": null,
-            "user": {
-                "login": "octocat"
-            },
-            "head": {
-                "ref": "feature/pr-view",
-                "sha": "abc123",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            },
-            "base": {
-                "ref": "main",
-                "sha": "def456",
-                "repo": {
-                    "full_name": "octo/demo"
-                }
-            }
-        }));
+        then.status(200).json_body(pr_payload(None));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .args(["pr", "view", "42", "--repo", "octo/demo"])
         .output()
         .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         "\
@@ -699,34 +434,21 @@ comments included: false"
 #[test]
 fn pr_view_fails_when_pull_request_is_missing() {
     let server = MockServer::start();
-
     let pr_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/pulls/404");
-        then.status(404).json_body(serde_json::json!({
-            "message": "Not Found"
-        }));
+        then.status(404)
+            .json_body(json!({ "message": "Not Found" }));
     });
-
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": "git@gitee.com:octo/demo.git",
-            "clone_url": "https://gitee.com/octo/demo.git",
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(common::repository_payload());
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .args(["pr", "view", "404", "--repo", "octo/demo"])
         .output()
         .unwrap();
-
     assert_eq!(output.status.code(), Some(6));
     assert!(output.stdout.is_empty());
     assert_eq!(
@@ -741,28 +463,22 @@ fn pr_view_fails_when_pull_request_is_missing() {
 #[test]
 fn pr_view_fails_when_repository_is_missing() {
     let server = MockServer::start();
-
     let pr_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/missing/pulls/404");
-        then.status(404).json_body(serde_json::json!({
-            "message": "Not Found"
-        }));
+        then.status(404)
+            .json_body(json!({ "message": "Not Found" }));
     });
-
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/missing");
-        then.status(404).json_body(serde_json::json!({
-            "message": "Not Found"
-        }));
+        then.status(404)
+            .json_body(json!({ "message": "Not Found" }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .args(["pr", "view", "404", "--repo", "octo/missing"])
         .output()
         .unwrap();
-
     assert_eq!(output.status.code(), Some(6));
     assert!(output.stdout.is_empty());
     assert_eq!(
@@ -772,30 +488,4 @@ fn pr_view_fails_when_repository_is_missing() {
 
     pr_mock.assert_hits(1);
     repo_mock.assert_hits(1);
-}
-
-fn git_repo_with_remote(remote_url: &str, branch: &str) -> TempDir {
-    let repo_dir = TempDir::new().unwrap();
-
-    run_git(repo_dir.path(), &["init"]);
-    run_git(repo_dir.path(), &["checkout", "-b", branch]);
-    run_git(repo_dir.path(), &["remote", "add", "origin", remote_url]);
-
-    repo_dir
-}
-
-fn run_git(repo_dir: &Path, args: &[&str]) {
-    let output = ProcessCommand::new("git")
-        .args(args)
-        .current_dir(repo_dir)
-        .output()
-        .unwrap();
-
-    assert!(
-        output.status.success(),
-        "git command failed: git {}\nstdout:\n{}\nstderr:\n{}",
-        args.join(" "),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 }

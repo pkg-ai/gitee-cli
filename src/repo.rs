@@ -7,7 +7,9 @@ use std::thread;
 use gitee_api_v5::{GiteeClient, RepoError, RepositoryResponse};
 use serde_json::json;
 
-use crate::command::{CommandError, CommandOutcome, EXIT_GIT, EXIT_OK, EXIT_REMOTE, OutputFormat};
+use crate::command::{
+    CommandError, CommandOutcome, EXIT_GIT, EXIT_OK, OutputFormat, TokenRequester,
+};
 use crate::config::{CloneProtocol, ConfigStore};
 use crate::repo_context::infer_repo_context;
 
@@ -25,36 +27,8 @@ impl RepoService {
     }
 
     pub fn view(&self, request: RepoViewRequest) -> Result<CommandOutcome, CommandError> {
-        let resolved = match request.repo {
-            Some(repo) => {
-                let slug = RepoSlug::parse(&repo)?;
-                ResolvedRepoView {
-                    owner: slug.owner,
-                    name: slug.name,
-                    source: "explicit",
-                    current_branch: None,
-                    allow_human_name_fallback: false,
-                }
-            }
-            None => {
-                let context = infer_repo_context()
-                    .map_err(|err| CommandError::git(format!("git context error: {err}")))?;
-
-                ResolvedRepoView {
-                    owner: context.owner,
-                    name: context.name,
-                    source: "local",
-                    current_branch: Some(context.current_branch),
-                    allow_human_name_fallback: true,
-                }
-            }
-        };
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .map(|resolved| resolved.token);
-
+        let resolved = resolve_repo(request.repo.as_deref())?;
+        let token = self.token()?;
         let repository =
             match self
                 .client
@@ -87,11 +61,7 @@ impl RepoService {
 
     pub fn clone(&self, request: RepoCloneRequest) -> Result<CommandOutcome, CommandError> {
         let slug = RepoSlug::parse_positional(&request.repo)?;
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .map(|resolved| resolved.token);
+        let token = self.token()?;
         let repository = self
             .client
             .fetch_repository(&slug.owner, &slug.name, token.as_deref())
@@ -137,6 +107,12 @@ impl RepoService {
             .map_err(CommandError::config)?;
 
         Ok(transport)
+    }
+}
+
+impl TokenRequester for RepoService {
+    fn config_store(&self) -> &ConfigStore {
+        &self.config
     }
 }
 
@@ -210,31 +186,38 @@ impl From<RepositoryResponse> for Repository {
     }
 }
 
-struct ResolvedRepoView {
-    owner: String,
-    name: String,
-    source: &'static str,
-    current_branch: Option<String>,
-    allow_human_name_fallback: bool,
+/// A repository resolved from an explicit `--repo` slug or local git context.
+#[derive(Clone)]
+pub struct ResolvedRepo {
+    pub owner: String,
+    pub name: String,
+    pub source: &'static str,
+    pub current_branch: Option<String>,
+    pub allow_human_name_fallback: bool,
 }
 
-struct RepoSlug {
-    owner: String,
-    name: String,
+/// An `owner/name` repository slug.
+pub struct RepoSlug {
+    pub owner: String,
+    pub name: String,
 }
 
 impl RepoSlug {
     fn parse(value: &str) -> Result<Self, CommandError> {
+        Self::from_parts(value, "invalid value for --repo: expected owner/repo")
+    }
+
+    fn parse_positional(value: &str) -> Result<Self, CommandError> {
+        Self::from_parts(value, "invalid repository slug: expected owner/repo")
+    }
+
+    fn from_parts(value: &str, error: &str) -> Result<Self, CommandError> {
         let Some((owner, name)) = value.split_once('/') else {
-            return Err(CommandError::usage(
-                "invalid value for --repo: expected owner/repo",
-            ));
+            return Err(CommandError::usage(error));
         };
 
         if owner.is_empty() || name.is_empty() || name.contains('/') {
-            return Err(CommandError::usage(
-                "invalid value for --repo: expected owner/repo",
-            ));
+            return Err(CommandError::usage(error));
         }
 
         Ok(Self {
@@ -242,24 +225,33 @@ impl RepoSlug {
             name: name.to_string(),
         })
     }
+}
 
-    fn parse_positional(value: &str) -> Result<Self, CommandError> {
-        let Some((owner, name)) = value.split_once('/') else {
-            return Err(CommandError::usage(
-                "invalid repository slug: expected owner/repo",
-            ));
-        };
-
-        if owner.is_empty() || name.is_empty() || name.contains('/') {
-            return Err(CommandError::usage(
-                "invalid repository slug: expected owner/repo",
-            ));
+/// Resolve a repo from an explicit `--repo` slug, or from the local git context.
+pub fn resolve_repo(repo: Option<&str>) -> Result<ResolvedRepo, CommandError> {
+    match repo {
+        Some(repo) => {
+            let slug = RepoSlug::parse(repo)?;
+            Ok(ResolvedRepo {
+                owner: slug.owner,
+                name: slug.name,
+                source: "explicit",
+                current_branch: None,
+                allow_human_name_fallback: false,
+            })
         }
+        None => {
+            let context = infer_repo_context()
+                .map_err(|err| CommandError::git(format!("git context error: {err}")))?;
 
-        Ok(Self {
-            owner: owner.to_string(),
-            name: name.to_string(),
-        })
+            Ok(ResolvedRepo {
+                owner: context.owner,
+                name: context.name,
+                source: "local",
+                current_branch: Some(context.current_branch),
+                allow_human_name_fallback: true,
+            })
+        }
     }
 }
 
@@ -514,23 +506,9 @@ fn prompt_for_clone_transport() -> Result<CloneTransport, CommandError> {
 
 fn map_repo_error(error: RepoError) -> CommandError {
     match error {
-        RepoError::InvalidToken => CommandError {
-            code: crate::command::EXIT_AUTH,
-            stdout: None,
-            stderr: Some("authentication failed".to_string()),
-        },
-        RepoError::Transport(err) => CommandError {
-            code: EXIT_REMOTE,
-            stdout: None,
-            stderr: Some(format!("remote request failed: {err}")),
-        },
-        RepoError::UnexpectedStatus(status) => CommandError {
-            code: EXIT_REMOTE,
-            stdout: None,
-            stderr: Some(format!(
-                "remote request returned unexpected status: {status}"
-            )),
-        },
+        RepoError::InvalidToken => CommandError::auth(),
+        RepoError::Transport(err) => CommandError::remote_transport(err),
+        RepoError::UnexpectedStatus(status) => CommandError::remote_status(status),
         RepoError::NotFound => CommandError::not_found("repository not found"),
     }
 }

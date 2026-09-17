@@ -9,9 +9,9 @@ use gitee_api_v5::{
 };
 use serde_json::json;
 
-use crate::command::{CommandError, CommandOutcome, EXIT_AUTH, EXIT_OK, EXIT_REMOTE, OutputFormat};
+use crate::command::{CommandError, CommandOutcome, EXIT_OK, OutputFormat, TokenRequester};
 use crate::config::ConfigStore;
-use crate::repo_context::infer_repo_context;
+use crate::repo::resolve_repo;
 
 pub struct IssueService {
     config: ConfigStore,
@@ -27,13 +27,9 @@ impl IssueService {
     }
 
     pub fn list(&self, request: IssueListRequest) -> Result<CommandOutcome, CommandError> {
-        let resolved = resolve_issue_repo(request.repo.as_deref())?;
+        let resolved = resolve_repo(request.repo.as_deref())?;
 
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .map(|resolved| resolved.token);
+        let token = self.token()?;
 
         let issues = self
             .client
@@ -69,12 +65,8 @@ impl IssueService {
     }
 
     pub fn view(&self, request: IssueViewRequest) -> Result<CommandOutcome, CommandError> {
-        let resolved = resolve_issue_repo(request.repo.as_deref())?;
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .map(|resolved| resolved.token);
+        let resolved = resolve_repo(request.repo.as_deref())?;
+        let token = self.token()?;
         let issue = self
             .client
             .fetch_issue(
@@ -121,18 +113,9 @@ impl IssueService {
     }
 
     pub fn create(&self, request: IssueCreateRequest) -> Result<CommandOutcome, CommandError> {
-        let resolved = resolve_issue_repo(request.repo.as_deref())?;
+        let resolved = resolve_repo(request.repo.as_deref())?;
         let body = read_optional_issue_body(request.body)?;
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .ok_or_else(|| CommandError {
-                code: EXIT_AUTH,
-                stdout: None,
-                stderr: Some("authentication required for issue create".to_string()),
-            })?
-            .token;
+        let token = self.require_token("issue create")?;
         let issue = self
             .client
             .create_issue(
@@ -159,7 +142,7 @@ impl IssueService {
     }
 
     pub fn edit(&self, request: IssueEditRequest) -> Result<CommandOutcome, CommandError> {
-        let resolved = resolve_issue_repo(request.repo.as_deref())?;
+        let resolved = resolve_repo(request.repo.as_deref())?;
         let body = match request.body {
             Some(source) => Some(read_issue_body(
                 source,
@@ -168,16 +151,7 @@ impl IssueService {
             )?),
             None => None,
         };
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .ok_or_else(|| CommandError {
-                code: EXIT_AUTH,
-                stdout: None,
-                stderr: Some("authentication required for issue edit".to_string()),
-            })?
-            .token;
+        let token = self.require_token("issue edit")?;
         let issue = self
             .client
             .update_issue(
@@ -210,23 +184,14 @@ impl IssueService {
     }
 
     pub fn comment(&self, request: IssueCommentRequest) -> Result<CommandOutcome, CommandError> {
-        let resolved = resolve_issue_repo(request.repo.as_deref())?;
+        let resolved = resolve_repo(request.repo.as_deref())?;
         let body = read_required_issue_body(
             request.body,
             "failed to read comment body from stdin",
             "failed to read comment body file",
             "comment body cannot be empty",
         )?;
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .ok_or_else(|| CommandError {
-                code: EXIT_AUTH,
-                stdout: None,
-                stderr: Some("authentication required for issue comment".to_string()),
-            })?
-            .token;
+        let token = self.require_token("issue comment")?;
         let comment = self
             .client
             .create_issue_comment(
@@ -249,6 +214,12 @@ impl IssueService {
                 comment,
             },
         ))
+    }
+}
+
+impl TokenRequester for IssueService {
+    fn config_store(&self) -> &ConfigStore {
+        &self.config
     }
 }
 
@@ -411,38 +382,6 @@ struct IssueCommentView {
     comment: IssueComment,
 }
 
-struct ResolvedIssueRepo {
-    owner: String,
-    name: String,
-    source: &'static str,
-}
-
-struct RepoSlug {
-    owner: String,
-    name: String,
-}
-
-impl RepoSlug {
-    fn parse(value: &str) -> Result<Self, CommandError> {
-        let Some((owner, name)) = value.split_once('/') else {
-            return Err(CommandError::usage(
-                "invalid value for --repo: expected owner/repo",
-            ));
-        };
-
-        if owner.is_empty() || name.is_empty() || name.contains('/') {
-            return Err(CommandError::usage(
-                "invalid value for --repo: expected owner/repo",
-            ));
-        }
-
-        Ok(Self {
-            owner: owner.to_string(),
-            name: name.to_string(),
-        })
-    }
-}
-
 fn render_issue_list(output: OutputFormat, view: IssueListView) -> CommandOutcome {
     match output {
         OutputFormat::Json { fields } => CommandOutcome::json(
@@ -531,7 +470,7 @@ fn render_issue_view(output: OutputFormat, view: IssueView) -> CommandOutcome {
         OutputFormat::Json { fields } => CommandOutcome::json(
             EXIT_OK,
             match fields {
-                Some(fields) => issue_view_selected_json(&view, &fields),
+                Some(fields) => issue_selected_json(&view.issue, &fields),
                 None => issue_view_json(&view),
             },
         ),
@@ -641,27 +580,6 @@ fn issue_view_json(view: &IssueView) -> serde_json::Value {
     })
 }
 
-fn issue_view_selected_json(view: &IssueView, fields: &[String]) -> serde_json::Value {
-    let mut selected = serde_json::Map::with_capacity(fields.len());
-
-    for field in fields {
-        let value = match field.as_str() {
-            "number" => json!(view.issue.number),
-            "title" => json!(view.issue.title),
-            "url" => json!(view.issue.html_url),
-            "state" => json!(view.issue.state),
-            "body" => json!(view.issue.body),
-            "createdAt" => json!(view.issue.created_at),
-            "updatedAt" => json!(view.issue.updated_at),
-            _ => unreachable!("unsupported issue json field"),
-        };
-
-        selected.insert(field.clone(), value);
-    }
-
-    serde_json::Value::Object(selected)
-}
-
 fn render_issue_comment(output: OutputFormat, view: IssueCommentView) -> CommandOutcome {
     match output {
         OutputFormat::Json { .. } => CommandOutcome::json(
@@ -692,29 +610,6 @@ fn render_issue_comment(output: OutputFormat, view: IssueCommentView) -> Command
             ]
             .join("\n"),
         ),
-    }
-}
-
-fn resolve_issue_repo(repo: Option<&str>) -> Result<ResolvedIssueRepo, CommandError> {
-    match repo {
-        Some(repo) => {
-            let slug = RepoSlug::parse(repo)?;
-            Ok(ResolvedIssueRepo {
-                owner: slug.owner,
-                name: slug.name,
-                source: "explicit",
-            })
-        }
-        None => {
-            let context = infer_repo_context()
-                .map_err(|err| CommandError::git(format!("git context error: {err}")))?;
-
-            Ok(ResolvedIssueRepo {
-                owner: context.owner,
-                name: context.name,
-                source: "local",
-            })
-        }
     }
 }
 
@@ -782,28 +677,12 @@ fn map_issue_create_error(error: IssueError) -> CommandError {
 
 fn map_issue_error(error: IssueError, not_found_message: &str) -> CommandError {
     match error {
-        IssueError::InvalidToken => CommandError {
-            code: EXIT_AUTH,
-            stdout: None,
-            stderr: Some("authentication failed".to_string()),
-        },
-        IssueError::Transport(err) => CommandError {
-            code: EXIT_REMOTE,
-            stdout: None,
-            stderr: Some(format!("remote request failed: {err}")),
-        },
-        IssueError::UnexpectedStatus(status) => CommandError {
-            code: EXIT_REMOTE,
-            stdout: None,
-            stderr: Some(format!(
-                "remote request returned unexpected status: {status}"
-            )),
-        },
-        IssueError::UnexpectedStatusWithMessage(status, message) => CommandError {
-            code: EXIT_REMOTE,
-            stdout: None,
-            stderr: Some(format!("remote request failed ({status}): {message}")),
-        },
+        IssueError::InvalidToken => CommandError::auth(),
+        IssueError::Transport(err) => CommandError::remote_transport(err),
+        IssueError::UnexpectedStatus(status) => CommandError::remote_status(status),
+        IssueError::UnexpectedStatusWithMessage(status, message) => {
+            CommandError::remote_status_message(status, message)
+        }
         IssueError::NotFound => CommandError::not_found(not_found_message),
     }
 }

@@ -10,9 +10,10 @@ use gitee_api_v5::{
 };
 use serde_json::json;
 
-use crate::command::{CommandError, CommandOutcome, EXIT_OK, EXIT_REMOTE, OutputFormat};
+use crate::command::{CommandError, CommandOutcome, EXIT_OK, OutputFormat, TokenRequester};
 use crate::config::ConfigStore;
-use crate::repo_context::{infer_repo_context, infer_repo_context_with_pushed_branch};
+use crate::repo::{ResolvedRepo, resolve_repo};
+use crate::repo_context::infer_repo_context_with_pushed_branch;
 
 pub struct PrService {
     config: ConfigStore,
@@ -29,11 +30,7 @@ impl PrService {
 
     pub fn view(&self, request: PrViewRequest) -> Result<CommandOutcome, CommandError> {
         let repo = resolve_repo(request.repo.as_deref())?;
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .map(|resolved| resolved.token);
+        let token = self.token()?;
 
         let pull_request =
             self.fetch_pull_request_with_fallback(&repo, request.number, token.as_deref())?;
@@ -71,17 +68,7 @@ impl PrService {
     }
 
     pub fn comment(&self, request: PrCommentRequest) -> Result<CommandOutcome, CommandError> {
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .ok_or_else(|| CommandError {
-                code: crate::command::EXIT_AUTH,
-                stdout: None,
-                stderr: Some("authentication required for pr comment".to_string()),
-            })?
-            .token;
-
+        let token = self.require_token("pr comment")?;
         let repo = resolve_repo(request.repo.as_deref())?;
         let body = read_required_body(request.body)?;
         let target_repo = self.resolve_write_target_repo(&repo, request.number, Some(&token))?;
@@ -106,17 +93,7 @@ impl PrService {
     }
 
     pub fn review(&self, request: PrReviewRequest) -> Result<CommandOutcome, CommandError> {
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .ok_or_else(|| CommandError {
-                code: crate::command::EXIT_AUTH,
-                stdout: None,
-                stderr: Some("authentication required for pr review".to_string()),
-            })?
-            .token;
-
+        let token = self.require_token("pr review")?;
         let repo = resolve_repo(request.repo.as_deref())?;
         let comment_body = match request.action {
             PrReviewAction::Approve => None,
@@ -161,11 +138,7 @@ impl PrService {
 
     pub fn list(&self, request: PrListRequest) -> Result<CommandOutcome, CommandError> {
         let repo = resolve_repo(request.repo.as_deref())?;
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .map(|resolved| resolved.token);
+        let token = self.token()?;
 
         let (repo, pull_requests) =
             self.fetch_pull_requests_with_fallback(&repo, &request.filters, token.as_deref())?;
@@ -174,21 +147,8 @@ impl PrService {
     }
 
     pub fn create(&self, request: PrCreateRequest) -> Result<CommandOutcome, CommandError> {
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .ok_or_else(|| CommandError {
-                code: crate::command::EXIT_AUTH,
-                stdout: None,
-                stderr: Some("authentication required for pr create".to_string()),
-            })?
-            .token;
-
-        let repo = match request.repo.as_deref() {
-            Some(repo) => resolve_repo(Some(repo))?,
-            None => resolve_repo(None)?,
-        };
+        let token = self.require_token("pr create")?;
+        let repo = resolve_repo(request.repo.as_deref())?;
         let head = resolve_create_head(&repo, request.head.as_deref(), request.repo.is_some())?;
         let base = match request.base {
             Some(base) => base,
@@ -220,17 +180,7 @@ impl PrService {
     }
 
     pub fn edit(&self, request: PrEditRequest) -> Result<CommandOutcome, CommandError> {
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .ok_or_else(|| CommandError {
-                code: crate::command::EXIT_AUTH,
-                stdout: None,
-                stderr: Some("authentication required for pr edit".to_string()),
-            })?
-            .token;
-
+        let token = self.require_token("pr edit")?;
         let repo = resolve_repo(request.repo.as_deref())?;
         let body = read_optional_body(request.body)?;
         let update = UpdatePullRequest {
@@ -246,17 +196,7 @@ impl PrService {
     }
 
     pub fn merge(&self, request: PrMergeRequest) -> Result<CommandOutcome, CommandError> {
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .ok_or_else(|| CommandError {
-                code: crate::command::EXIT_AUTH,
-                stdout: None,
-                stderr: Some("authentication required for pr merge".to_string()),
-            })?
-            .token;
-
+        let token = self.require_token("pr merge")?;
         let repo = resolve_repo(request.repo.as_deref())?;
         let (target_repo, result) = self.merge_pull_request_with_fallback(
             &repo,
@@ -278,15 +218,8 @@ impl PrService {
         ensure_git_repository_for_checkout()?;
         ensure_origin_remote_for_checkout()?;
 
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .map(|resolved| resolved.token);
-        let repo = match request.repo.as_deref() {
-            Some(repo) => resolve_repo(Some(repo))?,
-            None => resolve_repo(None)?,
-        };
+        let token = self.token()?;
+        let repo = resolve_repo(request.repo.as_deref())?;
         let pull_request =
             self.fetch_pull_request_with_fallback(&repo, request.number, token.as_deref())?;
 
@@ -317,17 +250,7 @@ impl PrService {
     }
 
     pub fn status(&self, request: PrStatusRequest) -> Result<CommandOutcome, CommandError> {
-        let token = self
-            .config
-            .load_runtime_token()
-            .map_err(CommandError::config)?
-            .ok_or_else(|| CommandError {
-                code: crate::command::EXIT_AUTH,
-                stdout: None,
-                stderr: Some("authentication required for pr status".to_string()),
-            })?
-            .token;
-
+        let token = self.require_token("pr status")?;
         let repo = resolve_repo(None)?;
         let current_branch = repo.current_branch.clone().ok_or_else(|| {
             CommandError::git("git context error: failed to resolve current branch")
@@ -599,6 +522,12 @@ impl PrService {
     }
 }
 
+impl TokenRequester for PrService {
+    fn config_store(&self) -> &ConfigStore {
+        &self.config
+    }
+}
+
 struct PullRequest {
     number: u64,
     state: String,
@@ -832,68 +761,6 @@ impl PrMergeMethod {
             Self::Merge => "merge",
             Self::Squash => "squash",
             Self::Rebase => "rebase",
-        }
-    }
-}
-
-#[derive(Clone)]
-struct ResolvedRepo {
-    owner: String,
-    name: String,
-    source: &'static str,
-    current_branch: Option<String>,
-    allow_human_name_fallback: bool,
-}
-
-struct RepoSlug {
-    owner: String,
-    name: String,
-}
-
-impl RepoSlug {
-    fn parse(value: &str) -> Result<Self, CommandError> {
-        let Some((owner, name)) = value.split_once('/') else {
-            return Err(CommandError::usage(
-                "invalid value for --repo: expected owner/repo",
-            ));
-        };
-
-        if owner.is_empty() || name.is_empty() || name.contains('/') {
-            return Err(CommandError::usage(
-                "invalid value for --repo: expected owner/repo",
-            ));
-        }
-
-        Ok(Self {
-            owner: owner.to_string(),
-            name: name.to_string(),
-        })
-    }
-}
-
-fn resolve_repo(repo: Option<&str>) -> Result<ResolvedRepo, CommandError> {
-    match repo {
-        Some(repo) => {
-            let slug = RepoSlug::parse(repo)?;
-            Ok(ResolvedRepo {
-                owner: slug.owner,
-                name: slug.name,
-                source: "explicit",
-                current_branch: None,
-                allow_human_name_fallback: false,
-            })
-        }
-        None => {
-            let context = infer_repo_context()
-                .map_err(|err| CommandError::git(format!("git context error: {err}")))?;
-
-            Ok(ResolvedRepo {
-                owner: context.owner,
-                name: context.name,
-                source: "local",
-                current_branch: Some(context.current_branch),
-                allow_human_name_fallback: true,
-            })
         }
     }
 }
@@ -1332,12 +1199,33 @@ fn render_optional_bool(value: Option<bool>) -> &'static str {
     }
 }
 
-fn ensure_git_repository_for_checkout() -> Result<(), CommandError> {
-    let output = ProcessCommand::new("git")
-        .args(["rev-parse", "--is-inside-work-tree"])
+/// Run a `git <args>` command, wrapping spawn failures in a stable error.
+fn run_git(args: &[&str], error_prefix: &str) -> Result<ProcessCommandOutput, CommandError> {
+    ProcessCommand::new("git")
+        .args(args)
         .output()
-        .map_err(|err| CommandError::git(format!("git context error: failed to run git: {err}")))?;
+        .map_err(|err| CommandError::git(format!("{error_prefix}: {err}")))
+}
 
+type ProcessCommandOutput = std::process::Output;
+
+/// Fail unless the git command exited successfully, emitting its stderr.
+fn ensure_git_success(
+    output: &ProcessCommandOutput,
+    error_prefix: &str,
+) -> Result<(), CommandError> {
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(CommandError::git(format!(
+        "{error_prefix}: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    )))
+}
+
+fn ensure_git_repository_for_checkout() -> Result<(), CommandError> {
+    let output = run_git(&["rev-parse", "--is-inside-work-tree"], "git context error")?;
     if output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "true" {
         return Ok(());
     }
@@ -1348,10 +1236,7 @@ fn ensure_git_repository_for_checkout() -> Result<(), CommandError> {
 }
 
 fn ensure_origin_remote_for_checkout() -> Result<(), CommandError> {
-    let output = ProcessCommand::new("git")
-        .args(["remote", "get-url", "origin"])
-        .output()
-        .map_err(|err| CommandError::git(format!("git context error: failed to run git: {err}")))?;
+    let output = run_git(&["remote", "get-url", "origin"], "git context error")?;
 
     if output.status.success() {
         return Ok(());
@@ -1365,27 +1250,16 @@ fn ensure_origin_remote_for_checkout() -> Result<(), CommandError> {
 fn fetch_branch_from_origin(branch: &str) -> Result<(), CommandError> {
     let remote_ref = format!("refs/remotes/origin/{branch}");
     let fetch_ref = format!("refs/heads/{branch}:{remote_ref}");
-    let output = ProcessCommand::new("git")
-        .args(["fetch", "origin", &fetch_ref])
-        .output()
-        .map_err(|err| CommandError::git(format!("git fetch failed: {err}")))?;
-
-    if output.status.success() {
-        return Ok(());
-    }
-
-    Err(CommandError::git(format!(
-        "git fetch failed: {}",
-        String::from_utf8_lossy(&output.stderr).trim()
-    )))
+    let output = run_git(&["fetch", "origin", &fetch_ref], "git fetch failed")?;
+    ensure_git_success(&output, "git fetch failed")
 }
 
 fn local_branch_exists(branch: &str) -> Result<bool, CommandError> {
     let reference = format!("refs/heads/{branch}");
-    let output = ProcessCommand::new("git")
-        .args(["show-ref", "--verify", "--quiet", &reference])
-        .output()
-        .map_err(|err| CommandError::git(format!("git context error: failed to run git: {err}")))?;
+    let output = run_git(
+        &["show-ref", "--verify", "--quiet", &reference],
+        "git context error",
+    )?;
 
     if output.status.success() {
         return Ok(true);
@@ -1403,48 +1277,32 @@ fn local_branch_exists(branch: &str) -> Result<bool, CommandError> {
 fn checkout_branch(branch: &str, created: bool) -> Result<(), CommandError> {
     let output = if created {
         let tracking_branch = format!("origin/{branch}");
-        ProcessCommand::new("git")
-            .args(["checkout", "-b", branch, "--track", &tracking_branch])
-            .output()
+        run_git(
+            &["checkout", "-b", branch, "--track", &tracking_branch],
+            "git checkout failed",
+        )?
     } else {
-        ProcessCommand::new("git")
-            .args(["checkout", branch])
-            .output()
-    }
-    .map_err(|err| CommandError::git(format!("git checkout failed: {err}")))?;
+        run_git(&["checkout", branch], "git checkout failed")?
+    };
 
-    if output.status.success() {
-        return Ok(());
-    }
-
-    Err(CommandError::git(format!(
-        "git checkout failed: {}",
-        String::from_utf8_lossy(&output.stderr).trim()
-    )))
+    ensure_git_success(&output, "git checkout failed")
 }
 
 fn set_branch_upstream(branch: &str) -> Result<(), CommandError> {
     let tracking_branch = format!("origin/{branch}");
-    let output = ProcessCommand::new("git")
-        .args(["branch", "--set-upstream-to", &tracking_branch, branch])
-        .output()
-        .map_err(|err| CommandError::git(format!("git checkout failed: {err}")))?;
+    let output = run_git(
+        &["branch", "--set-upstream-to", &tracking_branch, branch],
+        "git checkout failed",
+    )?;
 
-    if output.status.success() {
-        return Ok(());
-    }
-
-    Err(CommandError::git(format!(
-        "git checkout failed: {}",
-        String::from_utf8_lossy(&output.stderr).trim()
-    )))
+    ensure_git_success(&output, "git checkout failed")
 }
 
 fn git_current_branch() -> Result<String, CommandError> {
-    let output = ProcessCommand::new("git")
-        .args(["symbolic-ref", "--quiet", "--short", "HEAD"])
-        .output()
-        .map_err(|err| CommandError::git(format!("git context error: failed to run git: {err}")))?;
+    let output = run_git(
+        &["symbolic-ref", "--quiet", "--short", "HEAD"],
+        "git context error",
+    )?;
 
     if output.status.success() {
         return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
@@ -1512,73 +1370,29 @@ fn read_body_from_file(path: &str) -> Result<String, CommandError> {
 
 fn map_pull_request_error(error: PullRequestError) -> CommandError {
     match error {
-        PullRequestError::InvalidToken => CommandError {
-            code: crate::command::EXIT_AUTH,
-            stdout: None,
-            stderr: Some("authentication failed".to_string()),
-        },
-        PullRequestError::Transport(err) => CommandError {
-            code: EXIT_REMOTE,
-            stdout: None,
-            stderr: Some(format!("remote request failed: {err}")),
-        },
-        PullRequestError::UnexpectedStatus(status) => CommandError {
-            code: EXIT_REMOTE,
-            stdout: None,
-            stderr: Some(format!(
-                "remote request returned unexpected status: {status}"
-            )),
-        },
-        PullRequestError::UnexpectedStatusWithMessage(status, message) => CommandError {
-            code: EXIT_REMOTE,
-            stdout: None,
-            stderr: Some(format!("remote request failed ({status}): {message}")),
-        },
+        PullRequestError::InvalidToken => CommandError::auth(),
+        PullRequestError::Transport(err) => CommandError::remote_transport(err),
+        PullRequestError::UnexpectedStatus(status) => CommandError::remote_status(status),
+        PullRequestError::UnexpectedStatusWithMessage(status, message) => {
+            CommandError::remote_status_message(status, message)
+        }
         PullRequestError::NotFound => CommandError::not_found("pull request not found"),
     }
 }
 
 fn map_repo_error(error: RepoError) -> CommandError {
     match error {
-        RepoError::InvalidToken => CommandError {
-            code: crate::command::EXIT_AUTH,
-            stdout: None,
-            stderr: Some("authentication failed".to_string()),
-        },
-        RepoError::Transport(err) => CommandError {
-            code: EXIT_REMOTE,
-            stdout: None,
-            stderr: Some(format!("remote request failed: {err}")),
-        },
-        RepoError::UnexpectedStatus(status) => CommandError {
-            code: EXIT_REMOTE,
-            stdout: None,
-            stderr: Some(format!(
-                "remote request returned unexpected status: {status}"
-            )),
-        },
+        RepoError::InvalidToken => CommandError::auth(),
+        RepoError::Transport(err) => CommandError::remote_transport(err),
+        RepoError::UnexpectedStatus(status) => CommandError::remote_status(status),
         RepoError::NotFound => CommandError::not_found("repository not found"),
     }
 }
 
 fn map_auth_error(error: gitee_api_v5::AuthError) -> CommandError {
     match error {
-        gitee_api_v5::AuthError::InvalidToken => CommandError {
-            code: crate::command::EXIT_AUTH,
-            stdout: None,
-            stderr: Some("authentication failed".to_string()),
-        },
-        gitee_api_v5::AuthError::Transport(err) => CommandError {
-            code: EXIT_REMOTE,
-            stdout: None,
-            stderr: Some(format!("remote request failed: {err}")),
-        },
-        gitee_api_v5::AuthError::UnexpectedStatus(status) => CommandError {
-            code: EXIT_REMOTE,
-            stdout: None,
-            stderr: Some(format!(
-                "remote request returned unexpected status: {status}"
-            )),
-        },
+        gitee_api_v5::AuthError::InvalidToken => CommandError::auth(),
+        gitee_api_v5::AuthError::Transport(err) => CommandError::remote_transport(err),
+        gitee_api_v5::AuthError::UnexpectedStatus(status) => CommandError::remote_status(status),
     }
 }

@@ -1,9 +1,9 @@
-use assert_cmd::Command;
+mod common;
+
+use common::{assert_ok, cmd, git_repo_with_remote, parse_json};
 use httpmock::Method::GET;
 use httpmock::MockServer;
-use serde_json::Value;
-use std::path::Path;
-use std::process::Command as ProcessCommand;
+use serde_json::{Value, json};
 use tempfile::TempDir;
 
 #[test]
@@ -15,7 +15,7 @@ fn pr_status_summarizes_current_branch_and_current_user_in_json_output() {
         when.method(GET)
             .path("/v5/user")
             .header("authorization", "Bearer secret-token");
-        then.status(200).json_body(serde_json::json!({
+        then.status(200).json_body(json!({
             "login": "octocat"
         }));
     });
@@ -27,14 +27,13 @@ fn pr_status_summarizes_current_branch_and_current_user_in_json_output() {
             .query_param("state", "open")
             .query_param("head", "feature/status")
             .query_param("per_page", "10");
-        then.status(200)
-            .json_body(serde_json::json!([pull_request_payload(
-                42,
-                "Branch PR",
-                "maintainer",
-                "feature/status",
-                "main"
-            )]));
+        then.status(200).json_body(json!([pull_request_payload(
+            42,
+            "Branch PR",
+            "maintainer",
+            "feature/status",
+            "main"
+        )]));
     });
 
     let authored_mock = server.mock(|when, then| {
@@ -44,14 +43,13 @@ fn pr_status_summarizes_current_branch_and_current_user_in_json_output() {
             .query_param("state", "open")
             .query_param("author", "octocat")
             .query_param("per_page", "10");
-        then.status(200)
-            .json_body(serde_json::json!([pull_request_payload(
-                43,
-                "Authored PR",
-                "octocat",
-                "feature/authored",
-                "main"
-            )]));
+        then.status(200).json_body(json!([pull_request_payload(
+            43,
+            "Authored PR",
+            "octocat",
+            "feature/authored",
+            "main"
+        )]));
     });
 
     let assigned_mock = server.mock(|when, then| {
@@ -61,29 +59,25 @@ fn pr_status_summarizes_current_branch_and_current_user_in_json_output() {
             .query_param("state", "open")
             .query_param("assignee", "octocat")
             .query_param("per_page", "10");
-        then.status(200)
-            .json_body(serde_json::json!([pull_request_payload(
-                44,
-                "Assigned PR",
-                "teammate",
-                "feature/assigned",
-                "main"
-            )]));
+        then.status(200).json_body(json!([pull_request_payload(
+            44,
+            "Assigned PR",
+            "teammate",
+            "feature/assigned",
+            "main"
+        )]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args(["pr", "status", "--state", "open", "--limit", "10", "--json"])
         .output()
         .unwrap();
+    assert_ok(&output);
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body: Value = parse_json(&output);
     assert_eq!(body["repository"], "octo/demo");
     assert_eq!(body["source"], "local");
     assert_eq!(body["current_user"], "octocat");
@@ -107,7 +101,7 @@ fn pr_status_supports_gh_style_json_field_selection() {
         when.method(GET)
             .path("/v5/user")
             .header("authorization", "Bearer secret-token");
-        then.status(200).json_body(serde_json::json!({
+        then.status(200).json_body(json!({
             "login": "octocat"
         }));
     });
@@ -118,14 +112,13 @@ fn pr_status_supports_gh_style_json_field_selection() {
             .header("authorization", "Bearer secret-token")
             .query_param("head", "feature/status")
             .query_param("per_page", "30");
-        then.status(200)
-            .json_body(serde_json::json!([pull_request_payload(
-                42,
-                "Branch PR",
-                "maintainer",
-                "feature/status",
-                "main"
-            )]));
+        then.status(200).json_body(json!([pull_request_payload(
+            42,
+            "Branch PR",
+            "maintainer",
+            "feature/status",
+            "main"
+        )]));
     });
 
     let authored_mock = server.mock(|when, then| {
@@ -134,14 +127,13 @@ fn pr_status_supports_gh_style_json_field_selection() {
             .header("authorization", "Bearer secret-token")
             .query_param("author", "octocat")
             .query_param("per_page", "30");
-        then.status(200)
-            .json_body(serde_json::json!([pull_request_payload(
-                43,
-                "Authored PR",
-                "octocat",
-                "feature/authored",
-                "main"
-            )]));
+        then.status(200).json_body(json!([pull_request_payload(
+            43,
+            "Authored PR",
+            "octocat",
+            "feature/authored",
+            "main"
+        )]));
     });
 
     let assigned_mock = server.mock(|when, then| {
@@ -150,29 +142,25 @@ fn pr_status_supports_gh_style_json_field_selection() {
             .header("authorization", "Bearer secret-token")
             .query_param("assignee", "octocat")
             .query_param("per_page", "30");
-        then.status(200)
-            .json_body(serde_json::json!([pull_request_payload(
-                44,
-                "Assigned PR",
-                "teammate",
-                "feature/assigned",
-                "main"
-            )]));
+        then.status(200).json_body(json!([pull_request_payload(
+            44,
+            "Assigned PR",
+            "teammate",
+            "feature/assigned",
+            "main"
+        )]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args(["pr", "status", "--json", "number,title,url"])
         .output()
         .unwrap();
+    assert_ok(&output);
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body: Value = parse_json(&output);
     assert_eq!(body["currentBranch"][0]["number"], 42);
     assert_eq!(body["currentBranch"][0]["title"], "Branch PR");
     assert_eq!(
@@ -211,7 +199,7 @@ fn pr_status_supports_extended_gh_style_json_fields() {
         when.method(GET)
             .path("/v5/user")
             .header("authorization", "Bearer secret-token");
-        then.status(200).json_body(serde_json::json!({
+        then.status(200).json_body(json!({
             "login": "octocat"
         }));
     });
@@ -222,14 +210,13 @@ fn pr_status_supports_extended_gh_style_json_fields() {
             .header("authorization", "Bearer secret-token")
             .query_param("head", "feature/status")
             .query_param("per_page", "30");
-        then.status(200)
-            .json_body(serde_json::json!([pull_request_payload(
-                42,
-                "Branch PR",
-                "maintainer",
-                "feature/status",
-                "main"
-            )]));
+        then.status(200).json_body(json!([pull_request_payload(
+            42,
+            "Branch PR",
+            "maintainer",
+            "feature/status",
+            "main"
+        )]));
     });
 
     let authored_mock = server.mock(|when, then| {
@@ -238,7 +225,7 @@ fn pr_status_supports_extended_gh_style_json_fields() {
             .header("authorization", "Bearer secret-token")
             .query_param("author", "octocat")
             .query_param("per_page", "30");
-        then.status(200).json_body(serde_json::json!([]));
+        then.status(200).json_body(json!([]));
     });
 
     let assigned_mock = server.mock(|when, then| {
@@ -247,11 +234,10 @@ fn pr_status_supports_extended_gh_style_json_fields() {
             .header("authorization", "Bearer secret-token")
             .query_param("assignee", "octocat")
             .query_param("per_page", "30");
-        then.status(200).json_body(serde_json::json!([]));
+        then.status(200).json_body(json!([]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
@@ -263,11 +249,9 @@ fn pr_status_supports_extended_gh_style_json_fields() {
         ])
         .output()
         .unwrap();
+    assert_ok(&output);
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body: Value = parse_json(&output);
     assert_eq!(body["currentBranch"][0]["number"], 42);
     assert_eq!(body["currentBranch"][0]["title"], "Branch PR");
     assert_eq!(body["currentBranch"][0]["state"], "open");
@@ -290,8 +274,7 @@ fn pr_status_requires_authentication() {
     let repo_dir = git_repo_with_remote("https://gitee.com/octo/demo.git", "feature/status");
     let config_dir = TempDir::new().unwrap();
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_CONFIG_DIR", config_dir.path())
         .env_remove("GITEE_TOKEN")
@@ -316,7 +299,7 @@ fn pr_status_supports_default_text_output() {
         when.method(GET)
             .path("/v5/user")
             .header("authorization", "Bearer secret-token");
-        then.status(200).json_body(serde_json::json!({
+        then.status(200).json_body(json!({
             "login": "octocat"
         }));
     });
@@ -327,14 +310,13 @@ fn pr_status_supports_default_text_output() {
             .header("authorization", "Bearer secret-token")
             .query_param("head", "feature/status")
             .query_param("per_page", "30");
-        then.status(200)
-            .json_body(serde_json::json!([pull_request_payload(
-                42,
-                "Branch PR",
-                "maintainer",
-                "feature/status",
-                "main"
-            )]));
+        then.status(200).json_body(json!([pull_request_payload(
+            42,
+            "Branch PR",
+            "maintainer",
+            "feature/status",
+            "main"
+        )]));
     });
 
     let authored_mock = server.mock(|when, then| {
@@ -343,14 +325,13 @@ fn pr_status_supports_default_text_output() {
             .header("authorization", "Bearer secret-token")
             .query_param("author", "octocat")
             .query_param("per_page", "30");
-        then.status(200)
-            .json_body(serde_json::json!([pull_request_payload(
-                43,
-                "Authored PR",
-                "octocat",
-                "feature/authored",
-                "main"
-            )]));
+        then.status(200).json_body(json!([pull_request_payload(
+            43,
+            "Authored PR",
+            "octocat",
+            "feature/authored",
+            "main"
+        )]));
     });
 
     let assigned_mock = server.mock(|when, then| {
@@ -359,27 +340,23 @@ fn pr_status_supports_default_text_output() {
             .header("authorization", "Bearer secret-token")
             .query_param("assignee", "octocat")
             .query_param("per_page", "30");
-        then.status(200)
-            .json_body(serde_json::json!([pull_request_payload(
-                44,
-                "Assigned PR",
-                "teammate",
-                "feature/assigned",
-                "main"
-            )]));
+        then.status(200).json_body(json!([pull_request_payload(
+            44,
+            "Assigned PR",
+            "teammate",
+            "feature/assigned",
+            "main"
+        )]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args(["pr", "status"])
         .output()
         .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    assert_ok(&output);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         "\
@@ -408,8 +385,8 @@ fn pull_request_payload(
     author: &str,
     head_ref: &str,
     base_ref: &str,
-) -> serde_json::Value {
-    serde_json::json!({
+) -> Value {
+    json!({
         "number": number,
         "state": "open",
         "title": title,
@@ -438,30 +415,4 @@ fn pull_request_payload(
             }
         }
     })
-}
-
-fn git_repo_with_remote(remote_url: &str, branch: &str) -> TempDir {
-    let repo_dir = TempDir::new().unwrap();
-
-    run_git(repo_dir.path(), &["init"]);
-    run_git(repo_dir.path(), &["checkout", "-b", branch]);
-    run_git(repo_dir.path(), &["remote", "add", "origin", remote_url]);
-
-    repo_dir
-}
-
-fn run_git(repo_dir: &Path, args: &[&str]) {
-    let output = ProcessCommand::new("git")
-        .args(args)
-        .current_dir(repo_dir)
-        .output()
-        .unwrap();
-
-    assert!(
-        output.status.success(),
-        "git command failed: git {}\nstdout:\n{}\nstderr:\n{}",
-        args.join(" "),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 }
