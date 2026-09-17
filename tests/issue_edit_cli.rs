@@ -1,9 +1,9 @@
-use assert_cmd::Command;
+mod common;
+
+use common::{cmd, git_repo_with_remote};
 use httpmock::Method::PATCH;
 use httpmock::MockServer;
 use serde_json::Value;
-use std::path::Path;
-use std::process::Command as ProcessCommand;
 use tempfile::TempDir;
 
 #[test]
@@ -34,8 +34,7 @@ fn issue_edit_updates_title_with_explicit_repo_and_selected_json_fields() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -52,10 +51,8 @@ fn issue_edit_updates_title_with_explicit_repo_and_selected_json_fields() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    common::assert_ok(&output);
+    let body: Value = common::parse_json(&output);
     assert_eq!(body["number"], "I123");
     assert_eq!(body["title"], "Updated title");
     assert_eq!(body["url"], "https://gitee.com/octo/demo/issues/I123");
@@ -93,8 +90,7 @@ fn issue_edit_reads_body_from_stdin_updates_state_and_renders_text_output() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
@@ -111,8 +107,7 @@ fn issue_edit_reads_body_from_stdin_updates_state_and_renders_text_output() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         "\
@@ -161,8 +156,7 @@ fn issue_edit_allows_clearing_body_with_an_explicit_empty_string() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -179,10 +173,8 @@ fn issue_edit_allows_clearing_body_with_an_explicit_empty_string() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    common::assert_ok(&output);
+    let body: Value = common::parse_json(&output);
     assert_eq!(body["number"], "I125");
     assert_eq!(body["body"], "");
 
@@ -193,8 +185,7 @@ fn issue_edit_allows_clearing_body_with_an_explicit_empty_string() {
 fn issue_edit_requires_authentication() {
     let config_dir = TempDir::new().unwrap();
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_CONFIG_DIR", config_dir.path())
         .env_remove("GITEE_TOKEN")
         .args([
@@ -219,8 +210,7 @@ fn issue_edit_requires_authentication() {
 
 #[test]
 fn issue_edit_requires_at_least_one_mutation_flag() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .args(["issue", "edit", "I123", "--repo", "octo/demo"])
         .output()
         .unwrap();
@@ -235,8 +225,7 @@ fn issue_edit_requires_at_least_one_mutation_flag() {
 
 #[test]
 fn issue_edit_rejects_multiple_issue_numbers() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .args([
             "issue",
             "edit",
@@ -260,8 +249,7 @@ fn issue_edit_rejects_multiple_issue_numbers() {
 
 #[test]
 fn issue_edit_rejects_body_and_body_file_together() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .args([
             "issue",
             "edit",
@@ -286,8 +274,7 @@ fn issue_edit_rejects_body_and_body_file_together() {
 
 #[test]
 fn issue_edit_rejects_invalid_state() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .args([
             "issue",
             "edit",
@@ -310,8 +297,7 @@ fn issue_edit_rejects_invalid_state() {
 
 #[test]
 fn issue_edit_does_not_register_unimplemented_gh_flags() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .args([
             "issue",
             "edit",
@@ -350,8 +336,7 @@ fn issue_edit_fails_when_issue_is_missing() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -394,8 +379,7 @@ fn issue_edit_surfaces_remote_validation_errors() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -418,28 +402,4 @@ fn issue_edit_surfaces_remote_validation_errors() {
     );
 
     edit_mock.assert_hits(1);
-}
-
-fn git_repo_with_remote(remote_url: &str, branch: &str) -> TempDir {
-    let repo_dir = TempDir::new().unwrap();
-
-    run_git(repo_dir.path(), &["init"]);
-    run_git(repo_dir.path(), &["checkout", "-b", branch]);
-    run_git(repo_dir.path(), &["remote", "add", "origin", remote_url]);
-
-    repo_dir
-}
-
-fn run_git(repo_dir: &Path, args: &[&str]) {
-    let status = ProcessCommand::new("git")
-        .args(args)
-        .current_dir(repo_dir)
-        .status()
-        .unwrap();
-
-    assert!(
-        status.success(),
-        "git command failed: git {}",
-        args.join(" ")
-    );
 }

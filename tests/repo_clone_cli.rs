@@ -1,10 +1,24 @@
-use assert_cmd::Command;
+mod common;
+
+use common::{cmd, run_git};
 use httpmock::Method::GET;
 use httpmock::MockServer;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::path::Path;
-use std::process::Command as ProcessCommand;
 use tempfile::TempDir;
+
+/// A canonical `octo/demo` repository API response with the given clone/ssh URLs.
+fn repo_payload(ssh_url: &str, clone_url: &str) -> Value {
+    json!({
+        "full_name": "octo/demo",
+        "path": "demo",
+        "html_url": "https://gitee.com/octo/demo",
+        "ssh_url": ssh_url,
+        "clone_url": clone_url,
+        "fork": false,
+        "default_branch": "main"
+    })
+}
 
 #[test]
 fn repo_clone_clones_to_explicit_destination_over_https_and_reports_json() {
@@ -15,19 +29,13 @@ fn repo_clone_clones_to_explicit_destination_over_https_and_reports_json() {
 
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": "/definitely/missing/ssh-demo.git",
-            "clone_url": remote_repo.path(),
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(repo_payload(
+            "/definitely/missing/ssh-demo.git",
+            &remote_repo.path().display().to_string(),
+        ));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(working_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .args([
@@ -44,7 +52,7 @@ fn repo_clone_clones_to_explicit_destination_over_https_and_reports_json() {
     assert_eq!(output.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&output.stderr).contains("Cloning into"));
 
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body: Value = common::parse_json(&output);
     assert_eq!(body["full_name"], "octo/demo");
     assert_eq!(body["transport"], "https");
     assert_eq!(
@@ -70,19 +78,13 @@ fn repo_clone_uses_ssh_transport_and_defaults_destination_to_repo_name() {
 
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": remote_repo.path().display().to_string(),
-            "clone_url": "/definitely/missing/https-demo.git",
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(repo_payload(
+            &remote_repo.path().display().to_string(),
+            "/definitely/missing/https-demo.git",
+        ));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(working_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .args(["repo", "clone", "octo/demo", "--ssh"])
@@ -124,29 +126,22 @@ clone_protocol = "ssh"
 
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": remote_repo.path().display().to_string(),
-            "clone_url": "/definitely/missing/https-demo.git",
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(repo_payload(
+            &remote_repo.path().display().to_string(),
+            "/definitely/missing/https-demo.git",
+        ));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(working_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_CONFIG_DIR", config_dir.path())
         .args(["repo", "clone", "octo/demo", "--json"])
         .output()
         .unwrap();
-
     assert_eq!(output.status.code(), Some(0));
 
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body: Value = common::parse_json(&output);
     assert_eq!(body["full_name"], "octo/demo");
     assert_eq!(body["transport"], "ssh");
     assert_eq!(
@@ -169,19 +164,13 @@ fn repo_clone_prompts_for_protocol_on_first_use_and_persists_the_choice() {
 
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": remote_repo.path().display().to_string(),
-            "clone_url": "/definitely/missing/https-demo.git",
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(repo_payload(
+            &remote_repo.path().display().to_string(),
+            "/definitely/missing/https-demo.git",
+        ));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(working_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_CONFIG_DIR", config_dir.path())
@@ -189,10 +178,9 @@ fn repo_clone_prompts_for_protocol_on_first_use_and_persists_the_choice() {
         .args(["repo", "clone", "octo/demo", "--json"])
         .output()
         .unwrap();
-
     assert_eq!(output.status.code(), Some(0));
 
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body: Value = common::parse_json(&output);
     assert_eq!(body["transport"], "ssh");
     assert_eq!(
         body["destination"],
@@ -221,19 +209,13 @@ fn repo_clone_does_not_silently_default_protocol_when_the_prompt_is_unanswered()
 
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": remote_repo.path().display().to_string(),
-            "clone_url": remote_repo.path().display().to_string(),
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(repo_payload(
+            &remote_repo.path().display().to_string(),
+            &remote_repo.path().display().to_string(),
+        ));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(working_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_CONFIG_DIR", config_dir.path())
@@ -264,19 +246,13 @@ fn repo_clone_streams_git_progress_to_stderr_without_corrupting_json_output() {
 
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": "/definitely/missing/ssh-demo.git",
-            "clone_url": file_url(remote_repo.path()),
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(repo_payload(
+            "/definitely/missing/ssh-demo.git",
+            &file_url(remote_repo.path()),
+        ));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(working_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .args([
@@ -289,10 +265,9 @@ fn repo_clone_streams_git_progress_to_stderr_without_corrupting_json_output() {
         ])
         .output()
         .unwrap();
-
     assert_eq!(output.status.code(), Some(0));
 
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body: Value = common::parse_json(&output);
     assert_eq!(body["transport"], "https");
     assert_eq!(
         body["destination"],
@@ -322,19 +297,13 @@ token = "saved-token"
 
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": "/definitely/missing/ssh-demo.git",
-            "clone_url": remote_repo.path().display().to_string(),
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(repo_payload(
+            "/definitely/missing/ssh-demo.git",
+            &remote_repo.path().display().to_string(),
+        ));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(working_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_CONFIG_DIR", config_dir.path())
@@ -342,10 +311,9 @@ token = "saved-token"
         .args(["repo", "clone", "octo/demo", "--json"])
         .output()
         .unwrap();
-
     assert_eq!(output.status.code(), Some(0));
 
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body: Value = common::parse_json(&output);
     assert_eq!(body["transport"], "https");
 
     let config = std::fs::read_to_string(config_dir.path().join("config.toml")).unwrap();
@@ -357,11 +325,7 @@ token = "saved-token"
 
 #[test]
 fn repo_clone_rejects_an_invalid_repository_slug() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .args(["repo", "clone", "octo"])
-        .output()
-        .unwrap();
+    let output = cmd().args(["repo", "clone", "octo"]).output().unwrap();
 
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
@@ -383,19 +347,13 @@ fn repo_clone_fails_with_a_stable_git_error_when_destination_conflicts() {
 
     let repo_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": "/definitely/missing/ssh-demo.git",
-            "clone_url": remote_repo.path().display().to_string(),
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(repo_payload(
+            "/definitely/missing/ssh-demo.git",
+            &remote_repo.path().display().to_string(),
+        ));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(working_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .args(["repo", "clone", "octo/demo", "occupied", "--https"])
@@ -453,22 +411,6 @@ fn seeded_bare_repository() -> TempDir {
     );
 
     bare_repo
-}
-
-fn run_git(repo_dir: &Path, args: &[&str]) {
-    let output = ProcessCommand::new("git")
-        .args(args)
-        .current_dir(repo_dir)
-        .output()
-        .unwrap();
-
-    assert!(
-        output.status.success(),
-        "git command failed: git {}\nstdout:\n{}\nstderr:\n{}",
-        args.join(" "),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 }
 
 fn write_config(config_dir: &Path, contents: &str) {

@@ -1,10 +1,9 @@
-use assert_cmd::Command;
+mod common;
+
+use common::{cmd, git_repo_with_remote, parse_json};
 use httpmock::Method::{GET, PUT};
 use httpmock::MockServer;
 use serde_json::Value;
-use std::path::Path;
-use std::process::Command as ProcessCommand;
-use tempfile::TempDir;
 
 #[test]
 fn pr_merge_uses_default_merge_strategy_in_json_output() {
@@ -23,18 +22,15 @@ fn pr_merge_uses_default_merge_strategy_in_json_output() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args(["pr", "merge", "42", "--repo", "octo/demo", "--json"])
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    common::assert_ok(&output);
+    let body: Value = parse_json(&output);
     assert_eq!(body["repository"], "octo/demo");
     assert_eq!(body["pull_request"], 42);
     assert_eq!(body["merge_method"], "merge");
@@ -63,8 +59,7 @@ fn pr_merge_supports_squash_strategy_with_local_repo_context() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
@@ -72,8 +67,7 @@ fn pr_merge_supports_squash_strategy_with_local_repo_context() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         "\
@@ -131,8 +125,7 @@ fn pr_merge_resolves_human_name_remote_to_canonical_private_repo() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
@@ -140,10 +133,8 @@ fn pr_merge_resolves_human_name_remote_to_canonical_private_repo() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    common::assert_ok(&output);
+    let body: Value = parse_json(&output);
     assert_eq!(body["repository"], "hzw-dev/tip-ucan");
     assert_eq!(body["merge_method"], "rebase");
     assert_eq!(body["sha"], "fedcba");
@@ -155,10 +146,9 @@ fn pr_merge_resolves_human_name_remote_to_canonical_private_repo() {
 
 #[test]
 fn pr_merge_requires_authentication() {
-    let config_dir = TempDir::new().unwrap();
+    let config_dir = tempfile::TempDir::new().unwrap();
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_CONFIG_DIR", config_dir.path())
         .env_remove("GITEE_TOKEN")
         .args(["pr", "merge", "42", "--repo", "octo/demo", "--json"])
@@ -175,8 +165,7 @@ fn pr_merge_requires_authentication() {
 
 #[test]
 fn pr_merge_rejects_conflicting_strategy_flags() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .args([
             "pr",
             "merge",
@@ -211,8 +200,7 @@ fn pr_merge_surfaces_remote_validation_errors() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args(["pr", "merge", "45", "--repo", "octo/demo"])
@@ -227,30 +215,4 @@ fn pr_merge_surfaces_remote_validation_errors() {
     );
 
     merge_mock.assert_hits(1);
-}
-
-fn git_repo_with_remote(remote_url: &str, branch: &str) -> TempDir {
-    let repo_dir = TempDir::new().unwrap();
-
-    run_git(repo_dir.path(), &["init"]);
-    run_git(repo_dir.path(), &["checkout", "-b", branch]);
-    run_git(repo_dir.path(), &["remote", "add", "origin", remote_url]);
-
-    repo_dir
-}
-
-fn run_git(repo_dir: &Path, args: &[&str]) {
-    let output = ProcessCommand::new("git")
-        .args(args)
-        .current_dir(repo_dir)
-        .output()
-        .unwrap();
-
-    assert!(
-        output.status.success(),
-        "git command failed: git {}\nstdout:\n{}\nstderr:\n{}",
-        args.join(" "),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 }

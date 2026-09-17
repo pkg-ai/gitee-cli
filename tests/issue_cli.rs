@@ -1,12 +1,42 @@
-use assert_cmd::Command;
+mod common;
+
+use common::{assert_ok, cmd, git_repo_with_remote, parse_json, run_json};
 use httpmock::Method::{GET, POST};
 use httpmock::MockServer;
-use serde_json::Value;
+use serde_json::{Value, json};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
-use std::process::Command as ProcessCommand;
 use tempfile::TempDir;
+
+/// The canonical issue used by the `issue view` tests.
+fn issue_payload() -> Value {
+    json!({
+        "number": "I123",
+        "title": "Fix issue sync panic",
+        "state": "open",
+        "body": "full issue body",
+        "comments": 3,
+        "html_url": "https://gitee.com/octo/demo/issues/I123",
+        "created_at": "2026-03-20T10:00:00Z",
+        "updated_at": "2026-03-20T12:00:00Z",
+        "user": { "login": "bob" }
+    })
+}
+
+/// The canonical issue used by the `issue list` text/JSON-list tests.
+fn list_issue_payload(state: &str) -> Value {
+    json!({
+        "number": "I123",
+        "title": "Fix panic in issue sync",
+        "state": state,
+        "body": "panic body",
+        "comments": 2,
+        "html_url": "https://gitee.com/octo/demo/issues/I123",
+        "created_at": "2026-03-20T10:00:00Z",
+        "updated_at": "2026-03-20T12:00:00Z",
+        "user": { "login": "alice" }
+    })
+}
 
 #[test]
 fn issue_list_uses_local_repo_context_and_reports_stable_json_output() {
@@ -20,25 +50,11 @@ fn issue_list_uses_local_repo_context_and_reports_stable_json_output() {
             .query_param("q", "panic")
             .query_param("page", "2")
             .query_param("per_page", "5");
-        then.status(200).json_body(serde_json::json!([
-            {
-                "number": "I123",
-                "title": "Fix panic in issue sync",
-                "state": "closed",
-                "body": "panic body",
-                "comments": 2,
-                "html_url": "https://gitee.com/octo/demo/issues/I123",
-                "created_at": "2026-03-20T10:00:00Z",
-                "updated_at": "2026-03-20T12:00:00Z",
-                "user": {
-                    "login": "alice"
-                }
-            }
-        ]));
+        then.status(200)
+            .json_body(json!([list_issue_payload("closed")]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .args([
@@ -57,10 +73,8 @@ fn issue_list_uses_local_repo_context_and_reports_stable_json_output() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_ok(&output);
+    let body = parse_json(&output);
     assert_eq!(body["source"], "local");
     assert_eq!(body["owner"], "octo");
     assert_eq!(body["name"], "demo");
@@ -92,20 +106,8 @@ fn issue_list_supports_gh_style_json_field_selection() {
             .query_param("state", "open")
             .query_param("page", "1")
             .query_param("per_page", "20");
-        then.status(200).json_body(serde_json::json!([
-            {
-                "number": "I123",
-                "title": "Fix panic in issue sync",
-                "state": "open",
-                "body": "panic body",
-                "comments": 2,
-                "html_url": "https://gitee.com/octo/demo/issues/I123",
-                "created_at": "2026-03-20T10:00:00Z",
-                "updated_at": "2026-03-20T12:00:00Z",
-                "user": {
-                    "login": "alice"
-                }
-            },
+        then.status(200).json_body(json!([
+            list_issue_payload("open"),
             {
                 "number": "I124",
                 "title": "Fix issue search pagination",
@@ -122,18 +124,15 @@ fn issue_list_supports_gh_style_json_field_selection() {
         ]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .args(["issue", "list", "--json", "number,title,url"])
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_ok(&output);
+    let body = parse_json(&output);
     let items = body.as_array().unwrap();
     assert_eq!(items.len(), 2);
     assert_eq!(items[0]["number"], "I123");
@@ -159,25 +158,11 @@ fn issue_list_supports_extended_gh_style_json_fields() {
             .query_param("state", "open")
             .query_param("page", "1")
             .query_param("per_page", "20");
-        then.status(200).json_body(serde_json::json!([
-            {
-                "number": "I123",
-                "title": "Fix panic in issue sync",
-                "state": "open",
-                "body": "panic body",
-                "comments": 2,
-                "html_url": "https://gitee.com/octo/demo/issues/I123",
-                "created_at": "2026-03-20T10:00:00Z",
-                "updated_at": "2026-03-20T12:00:00Z",
-                "user": {
-                    "login": "alice"
-                }
-            }
-        ]));
+        then.status(200)
+            .json_body(json!([list_issue_payload("open")]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .args([
@@ -189,10 +174,8 @@ fn issue_list_supports_extended_gh_style_json_fields() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_ok(&output);
+    let body = parse_json(&output);
     let items = body.as_array().unwrap();
     assert_eq!(items[0]["number"], "I123");
     assert_eq!(items[0]["title"], "Fix panic in issue sync");
@@ -235,8 +218,7 @@ fn issue_create_uses_local_repo_context_and_reports_stable_json_output() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
@@ -252,10 +234,8 @@ fn issue_create_uses_local_repo_context_and_reports_stable_json_output() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_ok(&output);
+    let body = parse_json(&output);
     assert_eq!(body["source"], "local");
     assert_eq!(body["owner"], "octo");
     assert_eq!(body["name"], "demo");
@@ -274,8 +254,7 @@ fn issue_create_uses_local_repo_context_and_reports_stable_json_output() {
 
 #[test]
 fn issue_create_rejects_json_field_selection_with_a_specific_usage_error() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .args([
             "issue",
             "create",
@@ -326,8 +305,7 @@ fn issue_create_uses_explicit_repo_and_renders_text_output() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -343,8 +321,7 @@ fn issue_create_uses_explicit_repo_and_renders_text_output() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    assert_ok(&output);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         "\
@@ -392,8 +369,7 @@ fn issue_create_reads_body_from_a_file() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -410,10 +386,8 @@ fn issue_create_reads_body_from_a_file() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_ok(&output);
+    let body = parse_json(&output);
     assert_eq!(body["number"], "I126");
     assert_eq!(body["body"], "Generated from a file");
 
@@ -449,8 +423,7 @@ fn issue_create_reads_body_from_stdin_via_body_file_dash() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -468,10 +441,8 @@ fn issue_create_reads_body_from_stdin_via_body_file_dash() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_ok(&output);
+    let body = parse_json(&output);
     assert_eq!(body["number"], "I127");
     assert_eq!(body["body"], "Generated from stdin\n");
 
@@ -496,8 +467,7 @@ fn issue_create_surfaces_remote_validation_errors_instead_of_auth_failure() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args(["issue", "create", "--repo", "octo/demo", "--title", "Bad"])
@@ -518,8 +488,7 @@ fn issue_create_surfaces_remote_validation_errors_instead_of_auth_failure() {
 fn issue_create_requires_authentication() {
     let config_dir = TempDir::new().unwrap();
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_CONFIG_DIR", config_dir.path())
         .env_remove("GITEE_TOKEN")
         .args([
@@ -559,8 +528,7 @@ fn issue_create_fails_when_authentication_is_rejected() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "bad-token")
         .args([
@@ -602,8 +570,7 @@ fn issue_create_fails_when_repository_is_missing() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -629,8 +596,7 @@ fn issue_create_fails_when_repository_is_missing() {
 
 #[test]
 fn issue_create_rejects_missing_title() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .args(["issue", "create", "--repo", "octo/demo"])
         .output()
         .unwrap();
@@ -655,8 +621,7 @@ fn issue_create_rejects_body_and_body_file_together() {
         then.status(201);
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -688,8 +653,7 @@ fn issue_create_rejects_body_and_body_file_together() {
 fn issue_create_fails_when_not_inside_a_git_repository() {
     let working_dir = TempDir::new().unwrap();
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(working_dir.path())
         .env("GITEE_TOKEN", "secret-token")
         .args(["issue", "create", "--title", "hello from local repo"])
@@ -727,8 +691,7 @@ fn issue_comment_posts_a_reply_from_a_direct_body_flag() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -744,10 +707,8 @@ fn issue_comment_posts_a_reply_from_a_direct_body_flag() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_ok(&output);
+    let body = parse_json(&output);
     assert_eq!(body["source"], "explicit");
     assert_eq!(body["owner"], "octo");
     assert_eq!(body["name"], "demo");
@@ -787,8 +748,7 @@ fn issue_comment_supports_body_file_input_and_stable_text_output() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -803,8 +763,7 @@ fn issue_comment_supports_body_file_input_and_stable_text_output() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    assert_ok(&output);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         "\
@@ -844,8 +803,7 @@ fn issue_comment_supports_stdin_body_input_via_body_file_dash() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .write_stdin("Posted from stdin")
@@ -862,10 +820,8 @@ fn issue_comment_supports_stdin_body_input_via_body_file_dash() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_ok(&output);
+    let body = parse_json(&output);
     assert_eq!(body["number"], "I123");
     assert_eq!(body["id"], 101);
     assert_eq!(body["author"], "erin");
@@ -891,8 +847,7 @@ fn issue_comment_fails_when_issue_is_missing() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -934,8 +889,7 @@ fn issue_comment_fails_when_authentication_is_rejected() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "bad-token")
         .args([
@@ -962,8 +916,7 @@ fn issue_comment_fails_when_authentication_is_rejected() {
 
 #[test]
 fn issue_comment_rejects_missing_body_input() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .args(["issue", "comment", "I123", "--repo", "octo/demo"])
         .output()
         .unwrap();
@@ -989,8 +942,7 @@ fn issue_comment_rejects_body_and_body_file_together() {
         then.status(201);
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -1019,8 +971,7 @@ fn issue_comment_rejects_body_and_body_file_together() {
 
 #[test]
 fn issue_comment_rejects_removed_body_stdin_flag_as_unsupported() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .write_stdin("Posted from stdin")
         .args([
             "issue",
@@ -1043,8 +994,7 @@ fn issue_comment_rejects_removed_body_stdin_flag_as_unsupported() {
 
 #[test]
 fn issue_comment_rejects_json_field_selection_with_a_specific_usage_error() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .args([
             "issue",
             "comment",
@@ -1077,8 +1027,7 @@ fn issue_comment_rejects_whitespace_only_flag_body() {
         then.status(201);
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -1116,8 +1065,7 @@ fn issue_comment_rejects_whitespace_only_body_file() {
         then.status(201);
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -1152,8 +1100,7 @@ fn issue_comment_rejects_whitespace_only_stdin_body_via_body_file_dash() {
         then.status(201);
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .write_stdin(" \n\t ")
@@ -1191,8 +1138,7 @@ fn issue_comment_rejects_missing_body_file() {
         then.status(201);
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -1236,8 +1182,7 @@ fn issue_comment_rejects_unreadable_body_file() {
         then.status(201);
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -1267,8 +1212,7 @@ fn issue_comment_rejects_unreadable_body_file() {
 fn issue_comment_fails_when_not_inside_a_git_repository() {
     let working_dir = TempDir::new().unwrap();
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(working_dir.path())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -1295,37 +1239,18 @@ fn issue_view_skips_comment_history_by_default_and_reports_stable_json_output() 
 
     let issue_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/issues/I123");
-        then.status(200).json_body(serde_json::json!({
-            "number": "I123",
-            "title": "Fix issue sync panic",
-            "state": "open",
-            "body": "full issue body",
-            "comments": 3,
-            "html_url": "https://gitee.com/octo/demo/issues/I123",
-            "created_at": "2026-03-20T10:00:00Z",
-            "updated_at": "2026-03-20T12:00:00Z",
-            "user": {
-                "login": "bob"
-            }
-        }));
+        then.status(200).json_body(issue_payload());
     });
     let comments_mock = server.mock(|when, then| {
         when.method(GET)
             .path("/v5/repos/octo/demo/issues/I123/comments");
-        then.status(200).json_body(serde_json::json!([]));
+        then.status(200).json_body(json!([]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args(["issue", "view", "I123", "--repo", "octo/demo", "--json"])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body = run_json(
+        &server,
+        &["issue", "view", "I123", "--repo", "octo/demo", "--json"],
+    );
     assert_eq!(body["source"], "explicit");
     assert_eq!(body["owner"], "octo");
     assert_eq!(body["name"], "demo");
@@ -1350,25 +1275,12 @@ fn issue_view_supports_gh_style_json_field_selection() {
 
     let issue_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/issues/I123");
-        then.status(200).json_body(serde_json::json!({
-            "number": "I123",
-            "title": "Fix issue sync panic",
-            "state": "open",
-            "body": "full issue body",
-            "comments": 3,
-            "html_url": "https://gitee.com/octo/demo/issues/I123",
-            "created_at": "2026-03-20T10:00:00Z",
-            "updated_at": "2026-03-20T12:00:00Z",
-            "user": {
-                "login": "bob"
-            }
-        }));
+        then.status(200).json_body(issue_payload());
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args([
+    let body = run_json(
+        &server,
+        &[
             "issue",
             "view",
             "I123",
@@ -1376,14 +1288,8 @@ fn issue_view_supports_gh_style_json_field_selection() {
             "octo/demo",
             "--json",
             "number,title,url",
-        ])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+        ],
+    );
     assert_eq!(body["number"], "I123");
     assert_eq!(body["title"], "Fix issue sync panic");
     assert_eq!(body["url"], "https://gitee.com/octo/demo/issues/I123");
@@ -1402,25 +1308,12 @@ fn issue_view_supports_extended_gh_style_json_fields() {
 
     let issue_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/issues/I123");
-        then.status(200).json_body(serde_json::json!({
-            "number": "I123",
-            "title": "Fix issue sync panic",
-            "state": "open",
-            "body": "full issue body",
-            "comments": 3,
-            "html_url": "https://gitee.com/octo/demo/issues/I123",
-            "created_at": "2026-03-20T10:00:00Z",
-            "updated_at": "2026-03-20T12:00:00Z",
-            "user": {
-                "login": "bob"
-            }
-        }));
+        then.status(200).json_body(issue_payload());
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args([
+    let body = run_json(
+        &server,
+        &[
             "issue",
             "view",
             "I123",
@@ -1428,14 +1321,8 @@ fn issue_view_supports_extended_gh_style_json_fields() {
             "octo/demo",
             "--json",
             "number,title,url,state,body,createdAt,updatedAt",
-        ])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+        ],
+    );
     assert_eq!(body["number"], "I123");
     assert_eq!(body["title"], "Fix issue sync panic");
     assert_eq!(body["url"], "https://gitee.com/octo/demo/issues/I123");
@@ -1453,26 +1340,14 @@ fn issue_view_includes_paginated_comments_when_requested() {
 
     let issue_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/issues/I123");
-        then.status(200).json_body(serde_json::json!({
-            "number": "I123",
-            "title": "Fix issue sync panic",
-            "state": "open",
-            "body": "full issue body",
-            "comments": 3,
-            "html_url": "https://gitee.com/octo/demo/issues/I123",
-            "created_at": "2026-03-20T10:00:00Z",
-            "updated_at": "2026-03-20T12:00:00Z",
-            "user": {
-                "login": "bob"
-            }
-        }));
+        then.status(200).json_body(issue_payload());
     });
     let comments_mock = server.mock(|when, then| {
         when.method(GET)
             .path("/v5/repos/octo/demo/issues/I123/comments")
             .query_param("page", "2")
             .query_param("per_page", "1");
-        then.status(200).json_body(serde_json::json!([
+        then.status(200).json_body(json!([
             {
                 "id": 99,
                 "body": "Please add a regression test",
@@ -1485,10 +1360,9 @@ fn issue_view_includes_paginated_comments_when_requested() {
         ]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args([
+    let body = run_json(
+        &server,
+        &[
             "issue",
             "view",
             "I123",
@@ -1500,14 +1374,8 @@ fn issue_view_includes_paginated_comments_when_requested() {
             "--per-page",
             "1",
             "--json",
-        ])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+        ],
+    );
     assert_eq!(body["comments_included"], true);
     assert_eq!(body["comments_page"], 2);
     assert_eq!(body["comments_per_page"], 1);
@@ -1531,32 +1399,17 @@ fn issue_list_renders_stable_text_output() {
             .query_param("state", "open")
             .query_param("page", "1")
             .query_param("per_page", "20");
-        then.status(200).json_body(serde_json::json!([
-            {
-                "number": "I123",
-                "title": "Fix panic in issue sync",
-                "state": "open",
-                "body": "panic body",
-                "comments": 2,
-                "html_url": "https://gitee.com/octo/demo/issues/I123",
-                "created_at": "2026-03-20T10:00:00Z",
-                "updated_at": "2026-03-20T12:00:00Z",
-                "user": {
-                    "login": "alice"
-                }
-            }
-        ]));
+        then.status(200)
+            .json_body(json!([list_issue_payload("open")]));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .args(["issue", "list", "--repo", "octo/demo"])
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    assert_ok(&output);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         "\
@@ -1574,8 +1427,7 @@ I123 | open | alice | comments: 2 | Fix panic in issue sync"
 
 #[test]
 fn issue_list_rejects_an_invalid_state_filter() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .args(["issue", "list", "--repo", "octo/demo", "--state", "invalid"])
         .output()
         .unwrap();
@@ -1585,29 +1437,5 @@ fn issue_list_rejects_an_invalid_state_filter() {
     assert_eq!(
         String::from_utf8_lossy(&output.stderr).trim(),
         "invalid value for --state: expected open, closed, or all"
-    );
-}
-
-fn git_repo_with_remote(remote_url: &str, branch: &str) -> TempDir {
-    let repo_dir = TempDir::new().unwrap();
-
-    run_git(repo_dir.path(), &["init"]);
-    run_git(repo_dir.path(), &["checkout", "-b", branch]);
-    run_git(repo_dir.path(), &["remote", "add", "origin", remote_url]);
-
-    repo_dir
-}
-
-fn run_git(repo_dir: &Path, args: &[&str]) {
-    let status = ProcessCommand::new("git")
-        .args(args)
-        .current_dir(repo_dir)
-        .status()
-        .unwrap();
-
-    assert!(
-        status.success(),
-        "git command failed: git {}",
-        args.join(" ")
     );
 }

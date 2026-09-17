@@ -1,9 +1,8 @@
-use assert_cmd::Command;
+mod common;
+
+use common::{cmd, git_repo_with_remote, repository_payload};
 use httpmock::Method::{GET, POST};
 use httpmock::MockServer;
-use serde_json::Value;
-use std::path::Path;
-use std::process::Command as ProcessCommand;
 use tempfile::TempDir;
 
 #[test]
@@ -40,8 +39,7 @@ fn pr_comment_posts_a_general_comment_from_local_repo_context_in_json_output() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .current_dir(repo_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
@@ -49,10 +47,9 @@ fn pr_comment_posts_a_general_comment_from_local_repo_context_in_json_output() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
 
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body = common::parse_json(&output);
     assert_eq!(body["id"], 101);
     assert_eq!(body["body"], "Ship it");
     assert_eq!(body["author"], "octocat");
@@ -100,8 +97,7 @@ fn pr_comment_reads_body_from_a_file_and_renders_text_output() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -116,8 +112,7 @@ fn pr_comment_reads_body_from_a_file_and_renders_text_output() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         "\
@@ -165,8 +160,7 @@ fn pr_comment_reads_body_from_stdin_via_body_file_dash() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -183,10 +177,9 @@ fn pr_comment_reads_body_from_stdin_via_body_file_dash() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
 
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body = common::parse_json(&output);
     assert_eq!(body["id"], 103);
     assert_eq!(body["body"], "Generated from stdin\n");
 
@@ -212,8 +205,7 @@ fn pr_comment_rejects_body_and_body_file_together() {
         then.status(201);
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -245,8 +237,7 @@ fn pr_comment_rejects_body_and_body_file_together() {
 fn pr_comment_requires_authentication() {
     let config_dir = TempDir::new().unwrap();
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_CONFIG_DIR", config_dir.path())
         .env_remove("GITEE_TOKEN")
         .args([
@@ -286,19 +277,10 @@ fn pr_comment_reports_a_missing_pull_request() {
         when.method(GET)
             .path("/v5/repos/octo/demo")
             .header("authorization", "Bearer secret-token");
-        then.status(200).json_body(serde_json::json!({
-            "full_name": "octo/demo",
-            "path": "demo",
-            "html_url": "https://gitee.com/octo/demo",
-            "ssh_url": "git@gitee.com:octo/demo.git",
-            "clone_url": "https://gitee.com/octo/demo.git",
-            "fork": false,
-            "default_branch": "main"
-        }));
+        then.status(200).json_body(repository_payload());
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -326,8 +308,7 @@ fn pr_comment_reports_a_missing_pull_request() {
 
 #[test]
 fn pr_comment_rejects_an_empty_body() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_TOKEN", "secret-token")
         .args([
             "pr",
@@ -379,44 +360,4 @@ fn pull_request_payload(number: u64, head_ref: &str) -> serde_json::Value {
             }
         }
     })
-}
-
-fn git_repo_with_remote(remote_url: &str, branch: &str) -> TempDir {
-    let repo_dir = TempDir::new().unwrap();
-
-    run_git(repo_dir.path(), &["init"]);
-    std::fs::write(repo_dir.path().join("README.md"), "hello\n").unwrap();
-    run_git(repo_dir.path(), &["add", "README.md"]);
-    run_git(
-        repo_dir.path(),
-        &[
-            "-c",
-            "user.name=Test User",
-            "-c",
-            "user.email=test@example.com",
-            "commit",
-            "-m",
-            "init",
-        ],
-    );
-    run_git(repo_dir.path(), &["checkout", "-b", branch]);
-    run_git(repo_dir.path(), &["remote", "add", "origin", remote_url]);
-
-    repo_dir
-}
-
-fn run_git(repo_dir: &Path, args: &[&str]) {
-    let output = ProcessCommand::new("git")
-        .args(args)
-        .current_dir(repo_dir)
-        .output()
-        .unwrap();
-
-    assert!(
-        output.status.success(),
-        "git command failed: git {}\nstdout:\n{}\nstderr:\n{}",
-        args.join(" "),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 }

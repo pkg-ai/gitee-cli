@@ -1,7 +1,9 @@
-use assert_cmd::Command;
+mod common;
+
+use common::{assert_ok, cmd, parse_json, run_json};
 use httpmock::Method::{GET, POST};
 use httpmock::MockServer;
-use serde_json::Value;
+use serde_json::json;
 use tempfile::TempDir;
 
 #[test]
@@ -13,13 +15,12 @@ fn auth_login_accepts_equals_syntax_for_long_options() {
         when.method(GET)
             .path("/v5/user")
             .header("authorization", "Bearer inline-token");
-        then.status(200).json_body(serde_json::json!({
+        then.status(200).json_body(json!({
             "login": "inline-user"
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_CONFIG_DIR", config_dir.path())
         .env("GITEE_BASE_URL", server.base_url())
         .env_remove("GITEE_TOKEN")
@@ -27,10 +28,8 @@ fn auth_login_accepts_equals_syntax_for_long_options() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_ok(&output);
+    let body = parse_json(&output);
     assert_eq!(body["authenticated"], true);
     assert_eq!(body["source"], "config");
     assert_eq!(body["username"], "inline-user");
@@ -44,7 +43,7 @@ fn pr_view_accepts_a_standalone_double_dash_before_positionals() {
 
     let pr_mock = server.mock(|when, then| {
         when.method(GET).path("/v5/repos/octo/demo/pulls/42");
-        then.status(200).json_body(serde_json::json!({
+        then.status(200).json_body(json!({
             "number": 42,
             "state": "open",
             "title": "Double dash parsing",
@@ -75,17 +74,10 @@ fn pr_view_accepts_a_standalone_double_dash_before_positionals() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .env("GITEE_BASE_URL", server.base_url())
-        .args(["pr", "view", "--repo", "octo/demo", "--json", "--", "42"])
-        .output()
-        .unwrap();
-
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let body = run_json(
+        &server,
+        &["pr", "view", "--repo", "octo/demo", "--json", "--", "42"],
+    );
     assert_eq!(body["number"], 42);
     assert_eq!(body["title"], "Double dash parsing");
 
@@ -101,10 +93,10 @@ fn issue_comment_accepts_a_hyphen_prefixed_body_value() {
             .path("/v5/repos/octo/demo/issues/I123/comments")
             .header("authorization", "Bearer secret-token")
             .header("content-type", "application/json")
-            .json_body(serde_json::json!({
+            .json_body(json!({
                 "body": "--token=abc"
             }));
-        then.status(201).json_body(serde_json::json!({
+        then.status(201).json_body(json!({
             "id": 321,
             "body": "--token=abc",
             "created_at": "2026-03-20T14:00:00Z",
@@ -115,8 +107,7 @@ fn issue_comment_accepts_a_hyphen_prefixed_body_value() {
         }));
     });
 
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = cmd()
         .env("GITEE_BASE_URL", server.base_url())
         .env("GITEE_TOKEN", "secret-token")
         .args([
@@ -132,10 +123,8 @@ fn issue_comment_accepts_a_hyphen_prefixed_body_value() {
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
-
-    let body: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_ok(&output);
+    let body = parse_json(&output);
     assert_eq!(body["body"], "--token=abc");
     assert_eq!(body["id"], 321);
 

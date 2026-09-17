@@ -3,7 +3,7 @@ use std::io::{self, Read};
 use gitee_api_v5::{AuthError, GiteeClient};
 use serde_json::json;
 
-use crate::command::{CommandError, CommandOutcome, EXIT_AUTH, EXIT_OK, EXIT_REMOTE, OutputFormat};
+use crate::command::{CommandError, CommandOutcome, EXIT_AUTH, EXIT_OK, OutputFormat};
 use crate::config::ConfigStore;
 
 pub struct AuthService {
@@ -159,22 +159,8 @@ fn read_token_from_stdin() -> Result<String, String> {
 
 fn map_auth_error(error: AuthError) -> CommandError {
     match error {
-        AuthError::InvalidToken => CommandError {
-            code: EXIT_AUTH,
-            stdout: None,
-            stderr: Some("authentication failed".to_string()),
-        },
-        AuthError::Transport(err) => CommandError {
-            code: EXIT_REMOTE,
-            stdout: None,
-            stderr: Some(format!("remote request failed: {err}")),
-        },
-        AuthError::UnexpectedStatus(status) => CommandError {
-            code: EXIT_REMOTE,
-            stdout: None,
-            stderr: Some(format!(
-                "remote request returned unexpected status: {status}"
-            )),
-        },
+        AuthError::InvalidToken => CommandError::auth(),
+        AuthError::Transport(err) => CommandError::remote_transport(err),
+        AuthError::UnexpectedStatus(status) => CommandError::remote_status(status),
     }
 }

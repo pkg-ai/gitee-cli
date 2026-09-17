@@ -1,16 +1,12 @@
-use assert_cmd::Command;
+mod common;
+
 use serde_json::Value;
 
 #[test]
 fn root_help_describes_the_cli_and_agent_discovery_entrypoint() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .args(["--help"])
-        .output()
-        .unwrap();
+    let output = common::cmd().args(["--help"]).output().unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Agent-first CLI for gitee.com"));
@@ -20,14 +16,9 @@ fn root_help_describes_the_cli_and_agent_discovery_entrypoint() {
 
 #[test]
 fn help_json_exposes_the_top_level_command_groups() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
-        .args(["help", "--json"])
-        .output()
-        .unwrap();
+    let output = common::cmd().args(["help", "--json"]).output().unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
 
     let body: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(body["schema_version"], 1);
@@ -53,14 +44,12 @@ fn help_json_exposes_the_top_level_command_groups() {
 
 #[test]
 fn help_can_render_text_for_a_nested_command_topic() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = common::cmd()
         .args(["help", "pr", "create"])
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Create a pull request from the current branch or an explicit head"));
@@ -70,14 +59,9 @@ fn help_can_render_text_for_a_nested_command_topic() {
 
 #[test]
 fn help_text_describes_json_usage_per_command() {
-    let pr_list_output = Command::cargo_bin("gitee")
-        .unwrap()
-        .args(["help", "pr", "list"])
-        .output()
-        .unwrap();
+    let pr_list_output = common::cmd().args(["help", "pr", "list"]).output().unwrap();
 
-    assert_eq!(pr_list_output.status.code(), Some(0));
-    assert!(pr_list_output.stderr.is_empty());
+    common::assert_ok(&pr_list_output);
     let pr_list_stdout = String::from_utf8_lossy(&pr_list_output.stdout);
     assert!(pr_list_stdout.contains("--json [<FIELDS>]"));
 
@@ -89,14 +73,9 @@ fn help_text_describes_json_usage_per_command() {
         ["help", "pr", "checkout"],
         ["help", "repo", "clone"],
     ] {
-        let output = Command::cargo_bin("gitee")
-            .unwrap()
-            .args(topic)
-            .output()
-            .unwrap();
+        let output = common::cmd().args(topic).output().unwrap();
 
-        assert_eq!(output.status.code(), Some(0));
-        assert!(output.stderr.is_empty());
+        common::assert_ok(&output);
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(stdout.contains("--json"));
@@ -106,14 +85,12 @@ fn help_text_describes_json_usage_per_command() {
 
 #[test]
 fn help_json_can_describe_a_single_nested_command() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = common::cmd()
         .args(["help", "pr", "create", "--json"])
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
 
     let body: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(body["path"], "pr create");
@@ -132,14 +109,12 @@ fn help_json_can_describe_a_single_nested_command() {
 
 #[test]
 fn help_json_can_describe_pr_edit() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = common::cmd()
         .args(["help", "pr", "edit", "--json"])
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
 
     let body: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(body["path"], "pr edit");
@@ -156,14 +131,12 @@ fn help_json_can_describe_pr_edit() {
 
 #[test]
 fn help_json_can_describe_issue_edit() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = common::cmd()
         .args(["help", "issue", "edit", "--json"])
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
 
     let body: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(body["path"], "issue edit");
@@ -185,14 +158,12 @@ fn help_json_can_describe_issue_edit() {
 
 #[test]
 fn help_json_can_describe_pr_merge() {
-    let output = Command::cargo_bin("gitee")
-        .unwrap()
+    let output = common::cmd()
         .args(["help", "pr", "merge", "--json"])
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(0));
-    assert!(output.stderr.is_empty());
+    common::assert_ok(&output);
 
     let body: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(body["path"], "pr merge");
@@ -208,14 +179,12 @@ fn help_json_can_describe_pr_merge() {
 
 #[test]
 fn help_describes_pr_review_and_gh_style_aliases() {
-    let text_output = Command::cargo_bin("gitee")
-        .unwrap()
+    let text_output = common::cmd()
         .args(["help", "pr", "review"])
         .output()
         .unwrap();
 
-    assert_eq!(text_output.status.code(), Some(0));
-    assert!(text_output.stderr.is_empty());
+    common::assert_ok(&text_output);
 
     let stdout = String::from_utf8_lossy(&text_output.stdout);
     assert!(stdout.contains("Add a review to a pull request"));
@@ -224,14 +193,12 @@ fn help_describes_pr_review_and_gh_style_aliases() {
     assert!(stdout.contains("-b, --body <BODY>"));
     assert!(stdout.contains("-F, --body-file <PATH>"));
 
-    let json_output = Command::cargo_bin("gitee")
-        .unwrap()
+    let json_output = common::cmd()
         .args(["help", "pr", "review", "--json"])
         .output()
         .unwrap();
 
-    assert_eq!(json_output.status.code(), Some(0));
-    assert!(json_output.stderr.is_empty());
+    common::assert_ok(&json_output);
 
     let body: Value = serde_json::from_slice(&json_output.stdout).unwrap();
     assert_eq!(body["path"], "pr review");
@@ -257,14 +224,12 @@ fn help_describes_pr_review_and_gh_style_aliases() {
 
 #[test]
 fn help_json_describes_json_field_selection_for_list_and_status_commands() {
-    let pr_list_output = Command::cargo_bin("gitee")
-        .unwrap()
+    let pr_list_output = common::cmd()
         .args(["help", "pr", "list", "--json"])
         .output()
         .unwrap();
 
-    assert_eq!(pr_list_output.status.code(), Some(0));
-    assert!(pr_list_output.stderr.is_empty());
+    common::assert_ok(&pr_list_output);
 
     let pr_list_body: Value = serde_json::from_slice(&pr_list_output.stdout).unwrap();
     assert_eq!(pr_list_body["json_field_selection"], true);
@@ -281,14 +246,12 @@ fn help_json_describes_json_field_selection_for_list_and_status_commands() {
             == "gitee pr list --repo octo/demo --limit 10 --json number,title,url")
     );
 
-    let pr_status_output = Command::cargo_bin("gitee")
-        .unwrap()
+    let pr_status_output = common::cmd()
         .args(["help", "pr", "status", "--json"])
         .output()
         .unwrap();
 
-    assert_eq!(pr_status_output.status.code(), Some(0));
-    assert!(pr_status_output.stderr.is_empty());
+    common::assert_ok(&pr_status_output);
 
     let pr_status_body: Value = serde_json::from_slice(&pr_status_output.stdout).unwrap();
     assert_eq!(pr_status_body["json_field_selection"], true);

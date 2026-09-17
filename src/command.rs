@@ -1,3 +1,5 @@
+use crate::config::ConfigStore;
+
 pub const EXIT_OK: u8 = 0;
 pub const EXIT_USAGE: u8 = 2;
 pub const EXIT_AUTH: u8 = 3;
@@ -65,6 +67,44 @@ impl CommandError {
             stderr: Some(message.into()),
         }
     }
+
+    /// A remote API call failed due to bad/absent credentials.
+    pub fn auth() -> Self {
+        Self {
+            code: EXIT_AUTH,
+            stdout: None,
+            stderr: Some("authentication failed".to_string()),
+        }
+    }
+
+    /// A remote API call failed at the transport layer.
+    pub fn remote_transport(error: impl std::fmt::Display) -> Self {
+        Self {
+            code: EXIT_REMOTE,
+            stdout: None,
+            stderr: Some(format!("remote request failed: {error}")),
+        }
+    }
+
+    /// A remote API call returned an unexpected status.
+    pub fn remote_status(status: u16) -> Self {
+        Self {
+            code: EXIT_REMOTE,
+            stdout: None,
+            stderr: Some(format!(
+                "remote request returned unexpected status: {status}"
+            )),
+        }
+    }
+
+    /// A remote API call failed with an explicit status and message.
+    pub fn remote_status_message(status: u16, message: String) -> Self {
+        Self {
+            code: EXIT_REMOTE,
+            stdout: None,
+            stderr: Some(format!("remote request failed ({status}): {message}")),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -81,5 +121,27 @@ impl OutputFormat {
             } => Some(fields),
             Self::Text | Self::Json { fields: None } => None,
         }
+    }
+}
+
+/// Shared token plumbing for services that carry a [`ConfigStore`]. Resolves an
+/// optional runtime token (env first, then saved config) and can demand one for
+/// mutating commands.
+pub trait TokenRequester {
+    fn config_store(&self) -> &ConfigStore;
+
+    fn token(&self) -> Result<Option<String>, CommandError> {
+        self.config_store()
+            .load_runtime_token()
+            .map_err(CommandError::config)
+            .map(|resolved| resolved.map(|resolved| resolved.token))
+    }
+
+    fn require_token(&self, action: &str) -> Result<String, CommandError> {
+        self.token()?.ok_or_else(|| CommandError {
+            code: EXIT_AUTH,
+            stdout: None,
+            stderr: Some(format!("authentication required for {action}")),
+        })
     }
 }
