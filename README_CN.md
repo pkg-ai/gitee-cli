@@ -79,14 +79,23 @@ npm 包内置以下平台的预构建二进制：Apple Silicon macOS
 gitee skills install
 ```
 
-如需安装到 Claude Code 的个人 skill 目录，请传入 `--agent claude-code`：
+如需安装到某个客户端的个人 skill 目录，请传入 `--agent`：
 
 ```bash
 gitee skills install --agent claude-code
+gitee skills install --agent codebuddy
+gitee skills install --agent workbuddy
 ```
 
-`--agent` 仅支持 `claude-code`；省略该 flag 即使用默认的跨客户端目标。
-使用 `gitee skills list` 查看安装状态，用 `gitee skills uninstall` 移除目标。
+| Flag | 目标目录 |
+| --- | --- |
+| `--agent claude-code` | `~/.claude/skills/using-gitee-cli` |
+| `--agent codebuddy` | `~/.codebuddy/skills/using-gitee-cli` |
+| `--agent workbuddy` | `~/.workbuddy/skills/using-gitee-cli` |
+
+`--agent` 仅支持 `claude-code`、`codebuddy` 和 `workbuddy`；省略该 flag 即使用
+默认的跨客户端目标。使用 `gitee skills list` 查看安装状态，用
+`gitee skills uninstall` 移除目标。
 
 ## 常见工作流
 

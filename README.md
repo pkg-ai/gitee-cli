@@ -76,15 +76,23 @@ Install the bundled `using-gitee-cli` skill. By default it goes to
 gitee skills install
 ```
 
-For Claude Code's personal skill directory, pass `--agent claude-code`:
+For a client-specific personal skill directory, pass `--agent`:
 
 ```bash
 gitee skills install --agent claude-code
+gitee skills install --agent codebuddy
+gitee skills install --agent workbuddy
 ```
 
-`--agent` supports only `claude-code`; omit it for the default cross-client
-target. Use `gitee skills list` to check status, `gitee skills uninstall` to
-remove a target.
+| Flag | Target directory |
+| --- | --- |
+| `--agent claude-code` | `~/.claude/skills/using-gitee-cli` |
+| `--agent codebuddy` | `~/.codebuddy/skills/using-gitee-cli` |
+| `--agent workbuddy` | `~/.workbuddy/skills/using-gitee-cli` |
+
+`--agent` supports only `claude-code`, `codebuddy`, and `workbuddy`; omit it for
+the default cross-client target. Use `gitee skills list` to check status,
+`gitee skills uninstall` to remove a target.
 
 ## Common Workflows
 
