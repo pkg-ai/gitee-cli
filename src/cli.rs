@@ -1739,7 +1739,7 @@ fn agent_option() -> Arg {
         "agent",
         "agent",
         "AGENT",
-        "Install target: claude-code (omit the flag for the default cross-client target)",
+        "Install target: claude-code, codebuddy, or workbuddy (omit the flag for the default cross-client target)",
     )
 }
 
