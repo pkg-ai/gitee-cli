@@ -299,120 +299,9 @@ fn skills_commands_fail_with_config_error_when_home_cannot_be_resolved() {
 }
 
 #[test]
-fn skills_install_with_agent_claude_code_writes_to_the_claude_code_skill_dir() {
-    // Text output on a fresh home.
-    let text_home = TempDir::new().unwrap();
-    let text_dir = claude_code_skill_dir(text_home.path());
-    let text = gitee_with_home(text_home.path())
-        .args(["skills", "install", "--agent", "claude-code"])
-        .output()
-        .unwrap();
-
-    assert_ok(&text);
-    assert_eq!(
-        String::from_utf8_lossy(&text.stdout).trim(),
-        format!("installed using-gitee-cli to {}", text_dir.display())
-    );
-    assert!(text_dir.join("SKILL.md").is_file());
-    assert!(text_dir.join("references/commands.md").is_file());
-    for dir in other_dirs(text_home.path(), &text_dir) {
-        assert!(
-            !dir.exists(),
-            "unexpected target created: {}",
-            dir.display()
-        );
-    }
-
-    // JSON output and content parity on a separate home.
-    let home_dir = TempDir::new().unwrap();
-    let claude_dir = claude_code_skill_dir(home_dir.path());
-    let output = gitee_with_home(home_dir.path())
-        .args(["skills", "install", "--agent", "claude-code", "--json"])
-        .output()
-        .unwrap();
-
-    assert_ok(&output);
-
-    let body = parse_json(&output);
-    assert_eq!(body["name"], "using-gitee-cli");
-    assert_eq!(body["agent"], "claude-code");
-    assert_eq!(body["installed"], true);
-    assert_eq!(body["action"], "installed");
-    assert_eq!(body["path"], claude_dir.display().to_string());
-
-    assert!(claude_dir.join("SKILL.md").is_file());
-    assert!(claude_dir.join("references/commands.md").is_file());
-    assert_eq!(read_tree(&source_skill_dir()), read_tree(&claude_dir));
-
-    // Every other target must remain untouched.
-    for dir in other_dirs(home_dir.path(), &claude_dir) {
-        assert!(
-            !dir.exists(),
-            "unexpected target created: {}",
-            dir.display()
-        );
-    }
-}
-
-#[test]
-fn skills_uninstall_with_agent_claude_code_removes_only_the_selected_target() {
-    let home_dir = TempDir::new().unwrap();
-    let default_dir = skill_dir(home_dir.path());
-    let claude_dir = claude_code_skill_dir(home_dir.path());
-
-    let install = gitee_with_home(home_dir.path())
-        .args(["skills", "install", "--agent", "claude-code"])
-        .output()
-        .unwrap();
-    assert_eq!(install.status.code(), Some(0));
-    assert!(claude_dir.exists());
-
-    // Uninstall with no flag removes only the default target (a no-op here),
-    // leaving the Claude Code target in place.
-    let removed = gitee_with_home(home_dir.path())
-        .args(["skills", "uninstall"])
-        .output()
-        .unwrap();
-    assert_eq!(removed.status.code(), Some(0));
-    assert!(claude_dir.exists());
-
-    // Uninstall with --agent claude-code removes only the Claude Code target.
-    let removed_cc = gitee_with_home(home_dir.path())
-        .args(["skills", "uninstall", "--agent", "claude-code", "--json"])
-        .output()
-        .unwrap();
-    assert_ok(&removed_cc);
-    assert!(!claude_dir.exists());
-
-    let body = parse_json(&removed_cc);
-    assert_eq!(body["agent"], "claude-code");
-    assert_eq!(body["action"], "uninstalled");
-
-    // Reinstall and verify the text uninstall output for the claude-code target.
-    let reinstall = gitee_with_home(home_dir.path())
-        .args(["skills", "install", "--agent", "claude-code"])
-        .output()
-        .unwrap();
-    assert_eq!(reinstall.status.code(), Some(0));
-
-    let removed_cc_text = gitee_with_home(home_dir.path())
-        .args(["skills", "uninstall", "--agent", "claude-code"])
-        .output()
-        .unwrap();
-    assert_ok(&removed_cc_text);
-    assert!(!claude_dir.exists());
-    assert_eq!(
-        String::from_utf8_lossy(&removed_cc_text.stdout).trim(),
-        format!("uninstalled using-gitee-cli from {}", claude_dir.display())
-    );
-
-    // The default target was never created by this sequence.
-    assert!(!default_dir.exists());
-}
-
-#[test]
-fn skills_install_with_agent_codebuddy_and_workbuddy_writes_to_their_own_dirs() {
-    let targets: [(&str, TargetDir); 2] = [
+fn skills_install_with_agent_writes_to_that_clients_skill_dir() {
+    let targets: [(&str, TargetDir); 3] = [
+        ("claude-code", claude_code_skill_dir),
         ("codebuddy", codebuddy_skill_dir),
         ("workbuddy", workbuddy_skill_dir),
     ];
@@ -433,13 +322,7 @@ fn skills_install_with_agent_codebuddy_and_workbuddy_writes_to_their_own_dirs() 
         );
         assert!(text_dir.join("SKILL.md").is_file());
         assert!(text_dir.join("references/commands.md").is_file());
-        for dir in other_dirs(text_home.path(), &text_dir) {
-            assert!(
-                !dir.exists(),
-                "unexpected target created: {}",
-                dir.display()
-            );
-        }
+        assert_no_other_targets(text_home.path(), &text_dir);
 
         // JSON output and content parity on a separate home.
         let home_dir = TempDir::new().unwrap();
@@ -462,19 +345,15 @@ fn skills_install_with_agent_codebuddy_and_workbuddy_writes_to_their_own_dirs() 
         assert!(dir.join("references/commands.md").is_file());
         assert_eq!(read_tree(&source_skill_dir()), read_tree(&dir));
 
-        for other in other_dirs(home_dir.path(), &dir) {
-            assert!(
-                !other.exists(),
-                "unexpected target created: {}",
-                other.display()
-            );
-        }
+        // Every other target must remain untouched.
+        assert_no_other_targets(home_dir.path(), &dir);
     }
 }
 
 #[test]
-fn skills_uninstall_with_agent_codebuddy_and_workbuddy_removes_only_the_selected_target() {
-    let targets: [(&str, TargetDir); 2] = [
+fn skills_uninstall_with_agent_removes_only_the_selected_target() {
+    let targets: [(&str, TargetDir); 3] = [
+        ("claude-code", claude_code_skill_dir),
         ("codebuddy", codebuddy_skill_dir),
         ("workbuddy", workbuddy_skill_dir),
     ];
@@ -490,7 +369,8 @@ fn skills_uninstall_with_agent_codebuddy_and_workbuddy_removes_only_the_selected
         assert_eq!(install.status.code(), Some(0));
         assert!(dir.exists());
 
-        // Uninstall with no flag removes only the default target (a no-op here).
+        // Uninstall with no flag removes only the default target (a no-op here),
+        // leaving the selected client target in place.
         let removed = gitee_with_home(home_dir.path())
             .args(["skills", "uninstall"])
             .output()
@@ -510,7 +390,7 @@ fn skills_uninstall_with_agent_codebuddy_and_workbuddy_removes_only_the_selected
         assert_eq!(body["agent"], agent);
         assert_eq!(body["action"], "uninstalled");
 
-        // Reinstall and verify the text output for the selected target.
+        // Reinstall and verify the text uninstall output for the selected target.
         let reinstall = gitee_with_home(home_dir.path())
             .args(["skills", "install", "--agent", agent])
             .output()
@@ -529,13 +409,7 @@ fn skills_uninstall_with_agent_codebuddy_and_workbuddy_removes_only_the_selected
         );
 
         // No other target was ever touched by this sequence.
-        for other in other_dirs(home_dir.path(), &dir) {
-            assert!(
-                !other.exists(),
-                "unexpected target created: {}",
-                other.display()
-            );
-        }
+        assert_no_other_targets(home_dir.path(), &dir);
     }
 }
 
@@ -602,6 +476,16 @@ fn other_dirs(home: &Path, selected: &Path) -> Vec<PathBuf> {
     .into_iter()
     .filter(|dir| dir != selected)
     .collect()
+}
+
+fn assert_no_other_targets(home: &Path, selected: &Path) {
+    for dir in other_dirs(home, selected) {
+        assert!(
+            !dir.exists(),
+            "unexpected target created: {}",
+            dir.display()
+        );
+    }
 }
 
 fn source_skill_dir() -> PathBuf {
