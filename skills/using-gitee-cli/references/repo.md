@@ -1,4 +1,4 @@
-# gitee-cli Repo Commands
+# gitee Repo Commands
 
 Load this file for repository inspection and clone workflows.
 

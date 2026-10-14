@@ -1,6 +1,6 @@
-# gitee-cli Command Map
+# gitee Command Map
 
-Use this file as the navigation entrypoint for `gitee-cli` command lookup.
+Use this file as the navigation entrypoint for `gitee` command lookup.
 After reading it, load only the smallest relevant group document instead of the
 entire command set.
 

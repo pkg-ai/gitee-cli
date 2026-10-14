@@ -1,4 +1,4 @@
-# gitee-cli Auth Commands
+# gitee Auth Commands
 
 Load this file only when the task is about checking whether authentication is
 already usable. This skill intentionally does not document token save/remove

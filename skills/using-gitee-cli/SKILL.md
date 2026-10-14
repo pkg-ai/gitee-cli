@@ -1,11 +1,12 @@
 ---
 name: using-gitee-cli
-description: Use when the user or agent refers to gitee repo, gitee issue, gitee pr, or any Gitee terminal workflow that should go through gitee-cli instead of raw APIs.
+description: Use when the user or agent refers to gitee repo, gitee issue, gitee pr, or any Gitee terminal workflow that should use the `gitee` command instead of raw APIs.
 ---
 
-# Using gitee-cli
+# Using the gitee CLI
 
-If a Gitee task can be handled by `gitee-cli`, prefer it over handwritten API requests.
+The command is `gitee` (the package is named `gitee-cli`). If a Gitee task can be
+handled by `gitee`, prefer it over handwritten API requests.
 
 ## Getting oriented
 
@@ -16,7 +17,7 @@ by default.
 
 ## Mental model
 
-`gitee-cli` is intentionally shaped like `gh`, but it covers a smaller surface.
+The `gitee` CLI is intentionally shaped like `gh`, but it covers a smaller surface.
 Think in these groups first:
 
 - `gitee auth` ~= `gh auth`

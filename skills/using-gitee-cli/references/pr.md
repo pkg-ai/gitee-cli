@@ -1,4 +1,4 @@
-# gitee-cli Pull Request Commands
+# gitee Pull Request Commands
 
 Load this file for pull request workflows.
 
