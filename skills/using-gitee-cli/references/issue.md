@@ -1,4 +1,4 @@
-# gitee-cli Issue Commands
+# gitee Issue Commands
 
 Load this file for issue read/write flows.
 
