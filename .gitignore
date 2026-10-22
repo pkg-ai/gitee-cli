@@ -1,2 +1,31 @@
 /target
 .loop-state.json
+
+# ------------------------------------------------------------------------------
+# AI coding tools
+# ------------------------------------------------------------------------------
+# Ignore the contents, not the directory itself: git cannot re-include a path
+# whose parent directory is excluded, so `!.claude/skills/` requires `.claude/*`.
+# Team-shared config is re-included below; local state (`settings.local.json`,
+# `plans/`, `sessions/`, `shell-snapshots/`, ...) stays ignored.
+.claude/*
+!.claude/settings.json
+!.claude/commands/
+!.claude/agents/
+!.claude/skills/
+.codex/*
+!.codex/settings.json
+!.codex/commands/
+!.codex/agents/
+!.codex/skills/
+.codebuddy/*
+!.codebuddy/settings.json
+!.codebuddy/commands/
+!.codebuddy/agents/
+!.codebuddy/skills/
+.agents/*
+!.agents/skills/
+
+# Personal memory overrides (e.g. CLAUDE.local.md, CODEBUDDY.local.md);
+# the shared CLAUDE.md / CODEBUDDY.md stay tracked
+*.local.md
