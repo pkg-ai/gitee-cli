@@ -20,28 +20,32 @@ pub enum AgentKind {
     CodeBuddy,
     /// WorkBuddy's personal skill directory (`~/.workbuddy/skills`).
     WorkBuddy,
+    /// Trae CN's personal skill directory (`~/.trae-cn/skills`).
+    TraeCn,
 }
 
 impl AgentKind {
     /// All known targets in deterministic (output) order: default first.
-    pub const ALL: [AgentKind; 4] = [
+    pub const ALL: [AgentKind; 5] = [
         AgentKind::Default,
         AgentKind::ClaudeCode,
         AgentKind::CodeBuddy,
         AgentKind::WorkBuddy,
+        AgentKind::TraeCn,
     ];
 
-    /// Parse a `--agent` value. Only `claude-code`, `codebuddy`, and `workbuddy` are supported;
-    /// any other value is a usage error. The `claude` alias is intentionally rejected because it
-    /// reads as the Agent SDK/`.agents` convention in this ecosystem, and short aliases such as
-    /// `cb`/`wb` are rejected too so the `--agent` vocabulary stays unambiguous.
+    /// Parse a `--agent` value. Only `claude-code`, `codebuddy`, `workbuddy`, and `trae-cn` are
+    /// supported; any other value is a usage error. The `claude` alias is intentionally rejected
+    /// because it reads as the Agent SDK/`.agents` convention in this ecosystem, and short aliases
+    /// such as `cb`/`wb` are rejected too so the `--agent` vocabulary stays unambiguous.
     pub fn parse(value: &str) -> Result<Self, CommandError> {
         match value {
             "claude-code" => Ok(Self::ClaudeCode),
             "codebuddy" => Ok(Self::CodeBuddy),
             "workbuddy" => Ok(Self::WorkBuddy),
+            "trae-cn" => Ok(Self::TraeCn),
             _ => Err(CommandError::usage(
-                "invalid value for --agent: expected claude-code, codebuddy, or workbuddy (omit the flag for the default cross-client target)",
+                "invalid value for --agent: expected claude-code, codebuddy, workbuddy, or trae-cn (omit the flag for the default cross-client target)",
             )),
         }
     }
@@ -53,6 +57,7 @@ impl AgentKind {
             Self::ClaudeCode => "claude-code",
             Self::CodeBuddy => "codebuddy",
             Self::WorkBuddy => "workbuddy",
+            Self::TraeCn => "trae-cn",
         }
     }
 
@@ -63,6 +68,7 @@ impl AgentKind {
             Self::ClaudeCode => "claude-code",
             Self::CodeBuddy => "codebuddy",
             Self::WorkBuddy => "workbuddy",
+            Self::TraeCn => "trae-cn",
         }
     }
 
@@ -73,6 +79,7 @@ impl AgentKind {
             Self::ClaudeCode => ".claude/skills/using-gitee-cli",
             Self::CodeBuddy => ".codebuddy/skills/using-gitee-cli",
             Self::WorkBuddy => ".workbuddy/skills/using-gitee-cli",
+            Self::TraeCn => ".trae-cn/skills/using-gitee-cli",
         }
     }
 }

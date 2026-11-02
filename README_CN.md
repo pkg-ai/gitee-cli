@@ -85,6 +85,7 @@ gitee skills install
 gitee skills install --agent claude-code
 gitee skills install --agent codebuddy
 gitee skills install --agent workbuddy
+gitee skills install --agent trae-cn
 ```
 
 | Flag | 目标目录 |
@@ -92,8 +93,9 @@ gitee skills install --agent workbuddy
 | `--agent claude-code` | `~/.claude/skills/using-gitee-cli` |
 | `--agent codebuddy` | `~/.codebuddy/skills/using-gitee-cli` |
 | `--agent workbuddy` | `~/.workbuddy/skills/using-gitee-cli` |
+| `--agent trae-cn` | `~/.trae-cn/skills/using-gitee-cli` |
 
-`--agent` 仅支持 `claude-code`、`codebuddy` 和 `workbuddy`；省略该 flag 即使用
+`--agent` 仅支持 `claude-code`、`codebuddy`、`workbuddy` 和 `trae-cn`；省略该 flag 即使用
 默认的跨客户端目标。使用 `gitee skills list` 查看安装状态，用
 `gitee skills uninstall` 移除目标。
 

@@ -82,6 +82,7 @@ For a client-specific personal skill directory, pass `--agent`:
 gitee skills install --agent claude-code
 gitee skills install --agent codebuddy
 gitee skills install --agent workbuddy
+gitee skills install --agent trae-cn
 ```
 
 | Flag | Target directory |
@@ -89,8 +90,9 @@ gitee skills install --agent workbuddy
 | `--agent claude-code` | `~/.claude/skills/using-gitee-cli` |
 | `--agent codebuddy` | `~/.codebuddy/skills/using-gitee-cli` |
 | `--agent workbuddy` | `~/.workbuddy/skills/using-gitee-cli` |
+| `--agent trae-cn` | `~/.trae-cn/skills/using-gitee-cli` |
 
-`--agent` supports only `claude-code`, `codebuddy`, and `workbuddy`; omit it for
+`--agent` supports only `claude-code`, `codebuddy`, `workbuddy`, and `trae-cn`; omit it for
 the default cross-client target. Use `gitee skills list` to check status,
 `gitee skills uninstall` to remove a target.
 
