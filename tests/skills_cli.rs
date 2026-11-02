@@ -65,6 +65,7 @@ fn skills_list_reports_each_target_and_supports_agent_filtering() {
     let claude_dir = claude_code_skill_dir(home_dir.path());
     let codebuddy_dir = codebuddy_skill_dir(home_dir.path());
     let workbuddy_dir = workbuddy_skill_dir(home_dir.path());
+    let trae_cn_dir = trae_cn_skill_dir(home_dir.path());
 
     let initial = gitee_with_home(home_dir.path())
         .args(["skills", "list"])
@@ -78,11 +79,13 @@ fn skills_list_reports_each_target_and_supports_agent_filtering() {
             "using-gitee-cli (default)\tnot installed\t{}\n\
              using-gitee-cli claude-code\tnot installed\t{}\n\
              using-gitee-cli codebuddy\tnot installed\t{}\n\
-             using-gitee-cli workbuddy\tnot installed\t{}",
+             using-gitee-cli workbuddy\tnot installed\t{}\n\
+             using-gitee-cli trae-cn\tnot installed\t{}",
             default_dir.display(),
             claude_dir.display(),
             codebuddy_dir.display(),
-            workbuddy_dir.display()
+            workbuddy_dir.display(),
+            trae_cn_dir.display()
         )
     );
 
@@ -94,7 +97,7 @@ fn skills_list_reports_each_target_and_supports_agent_filtering() {
     assert_ok(&initial_json);
     let initial_body = parse_json(&initial_json);
     let rows = initial_body.as_array().unwrap();
-    assert_eq!(rows.len(), 4);
+    assert_eq!(rows.len(), 5);
     assert_eq!(rows[0]["name"], "using-gitee-cli");
     assert_eq!(rows[0]["agent"], "default");
     assert_eq!(rows[0]["installed"], false);
@@ -103,6 +106,7 @@ fn skills_list_reports_each_target_and_supports_agent_filtering() {
         ("claude-code", &claude_dir),
         ("codebuddy", &codebuddy_dir),
         ("workbuddy", &workbuddy_dir),
+        ("trae-cn", &trae_cn_dir),
     ]) {
         assert_eq!(row["name"], "using-gitee-cli");
         assert_eq!(row["agent"], agent);
@@ -132,6 +136,7 @@ fn skills_list_reports_each_target_and_supports_agent_filtering() {
         ("claude-code", &claude_dir),
         ("codebuddy", &codebuddy_dir),
         ("workbuddy", &workbuddy_dir),
+        ("trae-cn", &trae_cn_dir),
     ] {
         assert!(after_stdout.contains(&format!(
             "using-gitee-cli {agent}\tnot installed\t{}",
@@ -143,6 +148,7 @@ fn skills_list_reports_each_target_and_supports_agent_filtering() {
         ("claude-code", &claude_dir),
         ("codebuddy", &codebuddy_dir),
         ("workbuddy", &workbuddy_dir),
+        ("trae-cn", &trae_cn_dir),
     ] {
         let filtered = gitee_with_home(home_dir.path())
             .args(["skills", "list", "--agent", agent, "--json"])
@@ -300,10 +306,11 @@ fn skills_commands_fail_with_config_error_when_home_cannot_be_resolved() {
 
 #[test]
 fn skills_install_with_agent_writes_to_that_clients_skill_dir() {
-    let targets: [(&str, TargetDir); 3] = [
+    let targets: [(&str, TargetDir); 4] = [
         ("claude-code", claude_code_skill_dir),
         ("codebuddy", codebuddy_skill_dir),
         ("workbuddy", workbuddy_skill_dir),
+        ("trae-cn", trae_cn_skill_dir),
     ];
 
     for (agent, target_dir) in targets {
@@ -352,10 +359,11 @@ fn skills_install_with_agent_writes_to_that_clients_skill_dir() {
 
 #[test]
 fn skills_uninstall_with_agent_removes_only_the_selected_target() {
-    let targets: [(&str, TargetDir); 3] = [
+    let targets: [(&str, TargetDir); 4] = [
         ("claude-code", claude_code_skill_dir),
         ("codebuddy", codebuddy_skill_dir),
         ("workbuddy", workbuddy_skill_dir),
+        ("trae-cn", trae_cn_skill_dir),
     ];
 
     for (agent, target_dir) in targets {
@@ -428,7 +436,7 @@ fn skills_rejects_an_invalid_or_ambiguous_agent_value() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             assert!(
                 stderr.contains(
-                    "invalid value for --agent: expected claude-code, codebuddy, or workbuddy"
+                    "invalid value for --agent: expected claude-code, codebuddy, workbuddy, or trae-cn"
                 ),
                 "unexpected stderr: {stderr}"
             );
@@ -462,6 +470,10 @@ fn workbuddy_skill_dir(home: &Path) -> PathBuf {
     home.join(".workbuddy/skills/using-gitee-cli")
 }
 
+fn trae_cn_skill_dir(home: &Path) -> PathBuf {
+    home.join(".trae-cn/skills/using-gitee-cli")
+}
+
 /// Resolves a home directory to the skill directory of one `--agent` target.
 type TargetDir = fn(&Path) -> PathBuf;
 
@@ -472,6 +484,7 @@ fn other_dirs(home: &Path, selected: &Path) -> Vec<PathBuf> {
         claude_code_skill_dir(home),
         codebuddy_skill_dir(home),
         workbuddy_skill_dir(home),
+        trae_cn_skill_dir(home),
     ]
     .into_iter()
     .filter(|dir| dir != selected)

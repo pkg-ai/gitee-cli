@@ -387,8 +387,8 @@ static LEAF_META: &[(&str, LeafMeta)] = &[
             ],
             notes: &[
                 "Omit --agent to install to ~/.agents/skills/using-gitee-cli.",
-                "Pass --agent claude-code for ~/.claude/skills/using-gitee-cli, --agent codebuddy for ~/.codebuddy/skills/using-gitee-cli, or --agent workbuddy for ~/.workbuddy/skills/using-gitee-cli.",
-                "Valid --agent values are claude-code, codebuddy, and workbuddy; claude, cb, and wb are rejected.",
+                "Pass --agent claude-code for ~/.claude/skills/using-gitee-cli, --agent codebuddy for ~/.codebuddy/skills/using-gitee-cli, --agent workbuddy for ~/.workbuddy/skills/using-gitee-cli, or --agent trae-cn for ~/.trae-cn/skills/using-gitee-cli.",
+                "Valid --agent values are claude-code, codebuddy, workbuddy, and trae-cn; claude, cb, and wb are rejected.",
                 "Existing using-gitee-cli installations are overwritten.",
             ],
             ..leaf_meta("", "")
@@ -406,7 +406,7 @@ static LEAF_META: &[(&str, LeafMeta)] = &[
             ],
             notes: &[
                 "Alias: remove.",
-                "Omit --agent to remove ~/.agents/skills/using-gitee-cli; pass --agent claude-code, codebuddy, or workbuddy to remove the matching client directory.",
+                "Omit --agent to remove ~/.agents/skills/using-gitee-cli; pass --agent claude-code, codebuddy, workbuddy, or trae-cn to remove the matching client directory.",
                 "Only the selected target's directory is removed.",
                 "Missing installations are treated as a successful no-op.",
             ],
@@ -425,7 +425,7 @@ static LEAF_META: &[(&str, LeafMeta)] = &[
             ],
             notes: &[
                 "Alias: ls.",
-                "Omit --agent to show a row per target (default, claude-code, codebuddy, workbuddy); pass --agent codebuddy to filter to one row.",
+                "Omit --agent to show a row per target (default, claude-code, codebuddy, workbuddy, trae-cn); pass --agent codebuddy to filter to one row.",
                 "Only reports the bundled using-gitee-cli skill; it does not scan all installed skills.",
             ],
             ..leaf_meta("", "")
